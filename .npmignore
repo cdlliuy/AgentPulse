@@ -6,3 +6,8 @@ server.log
 session-names.json
 .DS_Store
 Thumbs.db
+take-screenshots.js
+record-demo.js
+demo-frames/
+screenshot-*.png
+demo.gif
