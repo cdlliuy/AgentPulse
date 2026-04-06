@@ -6,7 +6,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/cdlliuy/AgentPulse.git"
+    "url": "git+https://github.com/cdlliuy/AgentPulse.git"
   },
   "keywords": [
     "ai",
@@ -19,7 +19,7 @@
     "management"
   ],
   "bin": {
-    "agentpulse": "./server.js"
+    "agentpulse": "server.js"
   },
   "scripts": {
     "start": "node server.js",
