@@ -30,6 +30,10 @@ AgentPulse is a **local-first, zero-config dashboard** that automatically discov
 
 Developers who use AI coding agents (Claude Code, GitHub Copilot, etc.) daily and want a **single place** to monitor sessions, manage configurations, and review activity — instead of juggling scattered files, terminal windows, and config locations.
 
+## Demo
+
+![AgentPulse Demo](demo.gif)
+
 ## Features
 
 ### Session Management
