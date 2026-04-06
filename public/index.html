@@ -1,0 +1,1532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentPulse — AI Agent Management Dashboard</title>
+  <style>
+    :root {
+      --bg: #0d1117; --surface: #161b22; --surface2: #1c2128; --surface3: #21262d;
+      --border: #30363d; --text: #e6edf3; --text-dim: #8b949e; --text-faint: #484f58;
+      --accent: #58a6ff; --green: #3fb950; --red: #f85149; --orange: #d29922;
+      --purple: #bc8cff; --cyan: #39d2c0; --pink: #f778ba; --yellow: #e3b341;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
+    header h1 { font-size: 16px; font-weight: 600; }
+    .header-right { display: flex; align-items: center; gap: 16px; font-size: 12px; }
+    .header-stats { display: flex; gap: 16px; color: var(--text-dim); }
+    .header-stats span { font-weight: 600; color: var(--text); }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .status-dot.alive { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .status-dot.dead { background: var(--text-dim); }
+
+    .filter-bar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 8px 24px; display: flex; gap: 8px; align-items: center; }
+    .filter-bar button { background: var(--surface2); border: 1px solid var(--border); color: var(--text-dim); padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    .filter-bar button.active { border-color: var(--accent); color: var(--accent); background: #58a6ff15; }
+    .filter-bar button:hover { border-color: var(--text-dim); }
+
+    .container { display: flex; height: calc(100vh - 180px); }
+
+    /* Top-level navigation */
+    .top-nav { background: var(--surface); border-bottom: 2px solid var(--border); padding: 0 24px; display: flex; gap: 0; }
+    .top-nav-tab { padding: 10px 24px; font-size: 14px; font-weight: 600; color: var(--text-dim); cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: color 0.15s; }
+    .top-nav-tab:hover { color: var(--text); }
+    .top-nav-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .top-nav-tab .nav-icon { margin-right: 6px; }
+
+    /* Settings page */
+    .settings-page { padding: 24px; overflow-y: auto; height: calc(100vh - 135px); }
+    .settings-page-section { margin-bottom: 28px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+    .settings-page-section > h2 { font-size: 16px; font-weight: 700; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
+    .project-grid { display: flex; flex-direction: column; gap: 8px; }
+    .project-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .project-card-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+    .project-card-header:hover { background: var(--surface2); }
+    .project-card-header h3 { font-size: 13px; font-weight: 600; }
+    .project-card-body { padding: 14px 16px; display: none; }
+    .project-card-body.open { display: block; }
+    .project-card .project-stats { display: flex; gap: 12px; font-size: 11px; color: var(--text-dim); }
+    .project-card .project-stats .stat-val { font-weight: 600; color: var(--text); }
+
+    /* Session List */
+    .session-list { width: 360px; min-width: 360px; border-right: 1px solid var(--border); overflow-y: auto; background: var(--surface); }
+    .session-card { padding: 12px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.1s; }
+    .session-card:hover { background: var(--surface2); }
+    .session-card.selected { background: var(--surface2); border-left: 3px solid var(--accent); padding-left: 13px; }
+    .session-title { font-size: 13px; font-weight: 600; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+    .session-meta { font-size: 11px; color: var(--text-dim); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .badge { padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; }
+    .badge.vscode { background: #1f6feb22; color: var(--accent); }
+    .badge.cli { background: #3fb95022; color: var(--green); }
+    .badge.web { background: #bc8cff22; color: var(--purple); }
+    .badge.unknown { background: #30363d; color: var(--text-dim); }
+    .badge.historical { background: #d2992222; color: var(--orange); }
+    .session-stats { font-size: 10px; color: var(--text-faint); margin-top: 3px; display: flex; gap: 8px; }
+    .agent-dots { display: flex; gap: 3px; margin-left: auto; }
+    .agent-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); }
+    .agent-dot.completed { background: var(--green); }
+
+    /* Detail Panel */
+    .detail-panel { flex: 1; overflow-y: auto; }
+    .detail-panel .empty-state { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-dim); font-size: 14px; }
+
+    /* Tabs */
+    .tab-bar { display: flex; border-bottom: 1px solid var(--border); background: var(--surface); position: sticky; top: 0; z-index: 10; }
+    .tab { padding: 10px 20px; font-size: 13px; color: var(--text-dim); cursor: pointer; border-bottom: 2px solid transparent; }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-content { padding: 20px 24px; }
+
+    /* Info Cards */
+    .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; }
+    .info-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; }
+    .info-card .label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+    .info-card .value { font-size: 18px; font-weight: 700; }
+    .info-card .value.small { font-size: 12px; font-weight: 500; }
+
+    /* Agent Workflow */
+    .workflow-section { margin-bottom: 20px; }
+    .workflow-section h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; color: var(--text-dim); }
+    .agent-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 12px; }
+    .agent-card .agent-icon { width: 32px; height: 32px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; flex-shrink: 0; }
+    .agent-icon.main { background: #58a6ff22; color: var(--accent); }
+    .agent-icon.explore { background: #39d2c022; color: var(--cyan); }
+    .agent-icon.general { background: #bc8cff22; color: var(--purple); }
+    .agent-icon.guide { background: #f778ba22; color: var(--pink); }
+    .agent-card .agent-info { flex: 1; min-width: 0; }
+    .agent-card .agent-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .agent-card .agent-type { font-size: 10px; color: var(--text-dim); }
+    .agent-card .agent-status { font-size: 10px; padding: 2px 8px; border-radius: 10px; }
+    .agent-status.running { background: #d2992222; color: var(--orange); animation: pulse 1.5s infinite; }
+    .agent-status.completed { background: #3fb95022; color: var(--green); }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+    /* Compound Knowledge */
+    .knowledge-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; margin-bottom: 10px; }
+    .knowledge-card h4 { font-size: 13px; margin-bottom: 6px; color: var(--cyan); }
+    .knowledge-card p { font-size: 12px; color: var(--text-dim); line-height: 1.6; }
+    .knowledge-card .k-meta { font-size: 10px; color: var(--text-faint); margin-top: 6px; }
+    .knowledge-actions { display: flex; gap: 8px; margin-top: 8px; }
+    .knowledge-actions button { padding: 4px 12px; border-radius: 4px; font-size: 11px; cursor: pointer; border: 1px solid var(--border); }
+    .btn-approve { background: var(--green)22; color: var(--green); border-color: var(--green)44; }
+    .btn-skip { background: var(--surface2); color: var(--text-dim); }
+    .btn-extract { background: var(--cyan)22; color: var(--cyan); border-color: var(--cyan)44; padding: 8px 20px; font-size: 13px; }
+    .compound-intro { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 16px; margin-bottom: 16px; font-size: 12px; color: var(--text-dim); line-height: 1.6; }
+    .compound-intro strong { color: var(--text); }
+    .spinner { width:24px;height:24px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    /* Settings & Memory */
+    .settings-section { margin-bottom: 20px; }
+    .settings-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; padding: 12px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+    .settings-header:hover { border-color: var(--accent)44; }
+    .settings-header h3 { font-size: 13px; margin: 0; }
+    .settings-body { border: 1px solid var(--border); border-top: none; border-radius: 0 0 6px 6px; padding: 14px 16px; background: var(--bg); }
+    .settings-code { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 12px; font-family: 'Consolas','Monaco',monospace; font-size: 11px; color: var(--text); white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow-y: auto; line-height: 1.6; }
+    .settings-code.editable { background: var(--bg); cursor: text; }
+    .memory-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; margin-bottom: 8px; }
+    .memory-card .mem-header { display: flex; justify-content: space-between; align-items: center; }
+    .memory-card .mem-type { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; }
+    .mem-type.user { background: var(--accent)22; color: var(--accent); }
+    .mem-type.feedback { background: var(--orange)22; color: var(--orange); }
+    .mem-type.project { background: var(--green)22; color: var(--green); }
+    .mem-type.reference { background: var(--cyan)22; color: var(--cyan); }
+    .mem-type.unknown { background: var(--surface2); color: var(--text-dim); }
+
+    /* TODO List */
+    .todo-item { padding: 8px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; font-size: 13px; }
+    .todo-item:last-child { border-bottom: none; }
+    .todo-check { width: 16px; height: 16px; border-radius: 3px; border: 2px solid var(--border); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; }
+    .todo-check.completed { background: var(--green); border-color: var(--green); color: #fff; }
+    .todo-check.in_progress { background: var(--orange); border-color: var(--orange); color: #fff; }
+    .todo-check.pending { }
+    .todo-text { flex: 1; }
+    .todo-text.completed { color: var(--text-dim); text-decoration: line-through; }
+    .todo-text.in_progress { color: var(--orange); font-weight: 600; }
+
+    /* Event Feed */
+    .event-feed { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+    .event-feed-header { padding: 8px 14px; border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 600; color: var(--text-dim); display: flex; justify-content: space-between; }
+    .event-item { padding: 8px 14px; border-bottom: 1px solid var(--border); font-size: 12px; line-height: 1.5; }
+    .event-item:last-child { border-bottom: none; }
+    .event-type { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; display: inline-block; margin-right: 6px; }
+    .event-type.user { color: var(--accent); }
+    .event-type.assistant { color: var(--green); }
+    .event-type.skill { color: var(--pink); }
+    .event-text { color: var(--text); word-break: break-word; display: inline; }
+    .event-tools { margin-top: 3px; }
+    .tool-tag { display: inline-block; padding: 1px 5px; margin: 1px 3px 1px 0; border-radius: 3px; font-size: 10px; background: var(--surface2); border: 1px solid var(--border); color: var(--orange); }
+    .tool-tag.agent { color: var(--cyan); border-color: var(--cyan)44; }
+    .tool-input { color: var(--text-faint); font-size: 10px; margin-left: 2px; }
+    .event-time { font-size: 10px; color: var(--text-faint); float: right; }
+
+    .empty-state { display: flex; align-items: center; justify-content: center; min-height: 200px; color: var(--text-dim); font-size: 13px; }
+
+    .conn-status { font-size: 11px; display: flex; align-items: center; gap: 4px; }
+    .conn-status.ok { color: var(--green); }
+    .conn-status.err { color: var(--red); }
+
+    /* Event filter bar */
+    .event-filter-bar { display: flex; gap: 6px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+    .event-filter-bar .ef-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--text-dim); padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+    .event-filter-bar .ef-btn.active { border-color: var(--accent); color: var(--accent); background: #58a6ff15; }
+    .event-filter-bar .ef-btn:hover { border-color: var(--text-dim); }
+    .event-filter-bar .ef-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+    .event-pager { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 12px; }
+    .event-pager button { background: var(--surface2); border: 1px solid var(--border); color: var(--text-dim); padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+    .event-pager button:hover { border-color: var(--text-dim); }
+    .event-pager button:disabled { opacity: 0.3; cursor: default; }
+    .event-pager span { font-size: 11px; color: var(--text-dim); }
+
+    /* Workflow timeline */
+    .workflow-timeline { position: relative; padding-left: 24px; }
+    .workflow-timeline::before { content: ''; position: absolute; left: 10px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+    .wf-node { position: relative; margin-bottom: 12px; }
+    .wf-node::before { content: ''; position: absolute; left: -18px; top: 6px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--border); background: var(--bg); }
+    .wf-node.user::before { border-color: var(--accent); background: var(--accent); }
+    .wf-node.agent::before { border-color: var(--cyan); background: var(--cyan); }
+    .wf-node.tool::before { border-color: var(--orange); background: var(--orange); }
+    .wf-node.skill::before { border-color: var(--pink); background: var(--pink); }
+    .wf-node .wf-label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; }
+    .wf-node .wf-content { font-size: 12px; margin-top: 2px; }
+    .wf-node .wf-time { font-size: 10px; color: var(--text-faint); }
+
+    @media (max-width: 768px) {
+      .container { flex-direction: column; }
+      .session-list { width: 100%; min-width: 100%; max-height: 35vh; }
+    }
+
+    /* Agent Sidebar */
+    .agent-sidebar { width: 60px; min-width: 60px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding-top: 8px; overflow: hidden; position: relative; z-index: 20; }
+    .agent-btn { width: 44px; height: 44px; border-radius: 8px; border: 2px solid transparent; background: var(--surface2); color: var(--text-dim); font-size: 16px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; margin-bottom: 6px; transition: all 0.15s; position: relative; }
+    .agent-btn:hover { border-color: var(--text-dim); color: var(--text); }
+    .agent-btn.active { border-color: var(--accent); color: var(--accent); background: #58a6ff15; }
+    .agent-btn .agent-dot { position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; }
+    .agent-btn .agent-dot.has-active { background: var(--green); box-shadow: 0 0 4px var(--green); }
+    .sidebar-label { font-size: 8px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .agent-btn[title]:hover::after { content: attr(title); position: absolute; left: 52px; top: 50%; transform: translateY(-50%); background: var(--surface3); border: 1px solid var(--border); color: var(--text); padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 400; white-space: nowrap; z-index: 100; pointer-events: none; }
+
+    /* Main layout with sidebar */
+    .app-layout { display: flex; height: calc(100vh - 46px); }
+    .app-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 id="headerTitle">AI Agent Management Dashboard</h1>
+    <div class="header-right">
+      <div class="header-stats" id="headerStats">
+        Active: <span id="activeCount">0</span> &nbsp;|&nbsp; Historical: <span id="totalCount">0</span> &nbsp;|&nbsp; Agents: <span id="agentCount">0</span>
+      </div>
+      <div id="connStatus" class="conn-status err"><span class="status-dot dead"></span> ...</div>
+    </div>
+  </header>
+  <div class="app-layout">
+    <!-- Agent Sidebar -->
+    <div class="agent-sidebar" id="agentSidebar">
+      <div class="sidebar-label">Agents</div>
+      <div id="agentButtons"></div>
+    </div>
+
+    <!-- Main content area -->
+    <div class="app-main">
+  <div class="top-nav">
+    <div class="top-nav-tab active" onclick="switchTopTab('sessions')" id="top-tab-sessions"><span class="nav-icon">&#9654;</span>Sessions</div>
+    <div class="top-nav-tab" onclick="switchTopTab('config')" id="top-tab-config"><span class="nav-icon">&#9881;</span>Settings &amp; Config</div>
+  </div>
+
+  <!-- Sessions view (existing layout) -->
+  <div id="view-sessions">
+    <div class="filter-bar">
+      <button class="active" onclick="setFilter('all')">All</button>
+      <button onclick="setFilter('active')">Active Only</button>
+      <button onclick="setFilter('historical')">Historical</button>
+      <span style="flex:1"></span>
+      <span style="font-size:11px;color:var(--text-faint)" id="projectList"></span>
+    </div>
+    <div class="container">
+      <div class="session-list" id="sessionList"><div class="empty-state">Loading...</div></div>
+      <div class="detail-panel" id="detailPanel"><div class="empty-state">Select a session to view details</div></div>
+    </div>
+  </div>
+
+  <!-- Settings & Config view -->
+  <div id="view-config" style="display:none">
+    <div class="settings-page" id="configPage">
+      <div style="text-align:center;padding:40px;color:var(--text-dim)">Loading settings...</div>
+    </div>
+  </div>
+  </div><!-- end app-main -->
+  </div><!-- end app-layout -->
+
+<script>
+let sessions = [], selectedId = null, ws = null, filter = 'all', activeTab = 'overview';
+let suppressDetailRefresh = false; // prevent WS refresh from destroying interactive UI state
+const statefulTabs = new Set(['compound', 'cron', 'activity']); // tabs with interactive state that shouldn't auto-refresh
+let globalCronsCache = null; // cache global crons to avoid re-fetch flicker
+let eventFilter = 'substantive'; // 'all' | 'user' | 'substantive' | 'agents'
+let eventOrder = 'oldest'; // 'oldest' | 'newest'
+let eventPage = 0;
+let activityView = 'table'; // 'timeline' | 'table' — default to curated event log
+const EVENTS_PER_PAGE = 50;
+let currentTopTab = 'sessions'; // 'sessions' | 'config'
+let configCache = null; // cached /api/projects data
+let currentAgent = 'claude-code'; // 'claude-code' | 'github-copilot'
+let agentsList = []; // from /api/agents
+let copilotSessions = []; // cached copilot sessions
+let copilotSettingsCache = null; // cached copilot settings
+
+// ── Agent Sidebar ──────────────────────────────────────
+async function loadAgents() {
+  try {
+    const res = await fetch('/api/agents');
+    agentsList = await res.json();
+    renderAgentSidebar();
+  } catch {}
+}
+
+function renderAgentSidebar() {
+  const container = document.getElementById('agentButtons');
+  container.innerHTML = agentsList.map(a => {
+    const isActive = a.id === currentAgent;
+    const hasDot = a.activeSessions > 0;
+    return '<button class="agent-btn' + (isActive ? ' active' : '') + '" title="' + esc(a.name) + ' (' + a.totalSessions + ' sessions)" onclick="switchAgent(\'' + a.id + '\')" style="' + (isActive ? 'border-color:' + a.color + ';color:' + a.color : '') + '">' +
+      a.icon +
+      (hasDot ? '<span class="agent-dot has-active"></span>' : '') +
+      '</button>';
+  }).join('');
+}
+
+function switchAgent(agentId) {
+  if (agentId === currentAgent) return;
+  currentAgent = agentId;
+  selectedId = null;
+  configCache = null;
+  copilotSettingsCache = null;
+  renderAgentSidebar();
+  // Reload data for new agent
+  if (agentId === 'claude-code') {
+    document.title = 'AI Dashboard — Claude Code';
+    loadClaudeData();
+  } else if (agentId === 'github-copilot') {
+    document.title = 'AI Dashboard — GitHub Copilot';
+    loadCopilotData();
+  }
+  // Reset to sessions tab
+  switchTopTab('sessions');
+}
+
+
+async function loadClaudeData() {
+  try {
+    const res = await fetch('/api/sessions');
+    sessions = await res.json();
+    refresh();
+    if (sessions.length > 0) {
+      const active = sessions.find(s => s.alive);
+      selectSession((active || sessions[0]).sessionId);
+    }
+  } catch {}
+}
+
+async function loadCopilotData() {
+  try {
+    const res = await fetch('/api/copilot/sessions');
+    copilotSessions = await res.json();
+    sessions = copilotSessions; // reuse sessions array for rendering
+    refresh();
+    if (sessions.length > 0) selectSession(sessions[0].sessionId);
+  } catch {}
+}
+
+function switchTopTab(tab) {
+  currentTopTab = tab;
+  document.getElementById('top-tab-sessions').classList.toggle('active', tab === 'sessions');
+  document.getElementById('top-tab-config').classList.toggle('active', tab === 'config');
+  document.getElementById('view-sessions').style.display = tab === 'sessions' ? '' : 'none';
+  document.getElementById('view-config').style.display = tab === 'config' ? '' : 'none';
+  if (tab === 'config') {
+    if (currentAgent === 'claude-code') {
+      if (!configCache) loadConfigPage();
+      else renderConfigPage();
+    } else if (currentAgent === 'github-copilot') {
+      if (!copilotSettingsCache) loadCopilotConfigPage();
+      else renderCopilotConfigPage();
+    }
+  }
+}
+
+async function loadConfigPage() {
+  try {
+    const res = await fetch('/api/projects');
+    configCache = await res.json();
+    renderConfigPage();
+  } catch (e) {
+    document.getElementById('configPage').innerHTML = '<div style="padding:40px;color:var(--red)">Failed to load: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderConfigPage() {
+  if (!configCache) return;
+  const g = configCache.global;
+  const projects = configCache.projects || [];
+
+  let html = '';
+
+  // ─── Global Settings ───────────────────────────
+  html += '<div class="settings-page-section"><h2 style="color:var(--purple)">&#9881; Global Settings</h2>';
+
+  // Global settings card
+  html += '<div class="settings-section"><div class="settings-header" onclick="toggleSettingsSection(\'cfg-global-settings\')"><h3 style="color:var(--purple)">Settings (permissions, hooks, env)</h3><span id="toggle-cfg-global-settings" style="color:var(--text-dim)">&#9654;</span></div>';
+  html += '<div id="cfg-global-settings" style="display:none" class="settings-body">';
+  html += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">' + vscodeLink(g.settingsPath) + '</div>';
+  html += renderGlobalSettingsFromData(g.settings);
+  html += '</div></div>';
+
+  // Global MCP Servers
+  const globalMcpCount = Object.keys(g.mcpServers || {}).length;
+  html += '<div class="settings-section"><div class="settings-header" onclick="toggleSettingsSection(\'cfg-global-mcp\')" style="border-color:var(--pink)44"><h3 style="color:var(--pink)">MCP Servers (' + globalMcpCount + ')</h3><span id="toggle-cfg-global-mcp" style="color:var(--text-dim)">&#9654;</span></div>';
+  html += '<div id="cfg-global-mcp" style="display:none" class="settings-body">';
+  if (globalMcpCount > 0) {
+    html += '<div style="font-size:10px;margin-bottom:8px">' + vscodeLink(g.mcpServersPath) + '</div>';
+    html += Object.entries(g.mcpServers).map(([name, config]) => renderMcpServerCard(name, config, 'global')).join('');
+  } else {
+    html += '<div style="color:var(--text-dim);font-size:12px">No global MCP servers configured</div>';
+  }
+  html += '</div></div>';
+
+  // Global CLAUDE.md
+  html += '<div class="settings-section"><div class="settings-header" onclick="toggleSettingsSection(\'cfg-global-claudemd\')"><h3 style="color:var(--orange)">CLAUDE.md Instructions</h3><span id="toggle-cfg-global-claudemd" style="color:var(--text-dim)">&#9654;</span></div>';
+  html += '<div id="cfg-global-claudemd" style="display:none" class="settings-body">';
+  if (g.claudeMd) {
+    html += '<div style="font-size:12px;font-weight:600;color:var(--orange);margin-bottom:4px">Global CLAUDE.md <span style="color:var(--text-dim);font-weight:400">(' + g.claudeMdLines + ' lines)</span></div>';
+    html += '<div style="font-size:10px;margin-bottom:6px">' + vscodeLink(g.claudeMdPath) + '</div>';
+    html += '<div class="settings-code" style="max-height:400px">' + esc(g.claudeMd) + '</div>';
+  }
+  if (g.claudeLocalMd) {
+    html += '<div style="margin-top:12px"><div style="font-size:12px;font-weight:600;color:var(--orange);margin-bottom:4px">CLAUDE.local.md <span style="color:var(--text-dim);font-weight:400">(' + g.claudeLocalMdLines + ' lines)</span></div>';
+    html += '<div style="font-size:10px;margin-bottom:6px">' + vscodeLink(g.claudeLocalMdPath) + '</div>';
+    html += '<div class="settings-code" style="max-height:300px">' + esc(g.claudeLocalMd) + '</div></div>';
+  }
+  if (!g.claudeMd && !g.claudeLocalMd) html += '<div style="color:var(--text-dim);font-size:12px">No CLAUDE.md files found</div>';
+  html += '</div></div>';
+
+  // Global User Skills (async placeholder)
+  html += '<div class="settings-section" id="cc-global-skills-slot"><div class="settings-header"><h3 style="color:var(--purple)">Global User Skills</h3><span style="color:var(--text-dim);font-size:11px">Loading...</span></div></div>';
+
+  html += '</div>'; // end global section
+
+  // ─── Built-in Commands (reference) ─────────────
+  html += '<div class="settings-page-section" id="cc-builtin-section"><h2>&#9889; Built-in Commands</h2>';
+  html += '<div style="color:var(--text-dim);font-size:12px">Loading...</div>';
+  html += '</div>';
+
+  // ─── Projects ──────────────────────────────────
+  html += '<div class="settings-page-section"><h2 style="color:var(--cyan)">&#128193; Projects (' + projects.length + ')</h2>';
+  if (projects.length === 0) {
+    html += '<div style="color:var(--text-dim);font-size:12px">No projects found under ~/.claude/projects/</div>';
+  } else {
+    html += '<div class="project-grid">';
+    projects.forEach((proj, i) => {
+      const mcpCount = Object.keys(proj.mcpServers || {}).length;
+      const settingsExists = !!proj.settings;
+      const hasInstructions = !!proj.claudeMd;
+      html += '<div class="project-card">';
+      html += '<div class="project-card-header" onclick="toggleProjectCard(' + i + ')">';
+      html += '<h3 style="color:var(--cyan)">' + esc(proj.displayName) + '</h3>';
+      html += '<span id="toggle-proj-' + i + '" style="color:var(--text-dim)">&#9654;</span>';
+      html += '</div>';
+      html += '<div style="padding:6px 16px;font-size:11px;color:var(--text-dim);border-bottom:1px solid var(--border)">';
+      html += '<div class="project-stats">';
+      html += '<span>Memory: <span class="stat-val">' + proj.memoryCount + '</span></span>';
+      html += '<span>MCP: <span class="stat-val">' + mcpCount + '</span></span>';
+      html += '<span>Settings: <span class="stat-val">' + (settingsExists ? 'Yes' : 'No') + '</span></span>';
+      html += '<span>Instructions: <span class="stat-val">' + (hasInstructions ? 'Yes' : 'No') + '</span></span>';
+      html += '</div>';
+      html += '<div style="font-size:10px;color:var(--text-faint);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(proj.slug) + '">' + esc(proj.slug) + '</div>';
+      html += '</div>';
+      html += '<div class="project-card-body" id="proj-body-' + i + '">';
+      html += renderProjectCardBody(proj);
+      html += '</div></div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+
+  document.getElementById('configPage').innerHTML = html;
+
+  // Async load skills and populate slots
+  fetch('/api/claude-code/skills').then(r => r.json()).then(data => {
+    // 1. Global User Skills slot
+    const globalSlot = document.getElementById('cc-global-skills-slot');
+    if (globalSlot) {
+      let gh = '<div class="settings-header" onclick="toggleSettingsSection(\'cc-global-skills\')"><h3 style="color:var(--purple)">Global User Skills (' + data.global.length + ')</h3><span id="toggle-cc-global-skills" style="color:var(--text-dim)">&#9654;</span></div>';
+      gh += '<div id="cc-global-skills" style="display:none" class="settings-body">';
+      if (data.global.length > 0) {
+        gh += '<div style="font-size:10px;margin-bottom:8px">' + vscodeLink(data.globalDir) + '</div>';
+        gh += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+        data.global.forEach(cmd => {
+          gh += '<div style="display:inline-flex;align-items:center;gap:4px;background:var(--purple)08;border:1px solid var(--purple)33;border-radius:4px;padding:3px 8px" title="' + esc(cmd.description) + '"><code style="font-size:11px;color:var(--purple);font-weight:600">' + esc(cmd.name) + '</code></div>';
+        });
+        gh += '</div>';
+      } else {
+        gh += '<div style="color:var(--text-dim);font-size:12px">No global user skills in ~/.claude/commands/</div>';
+      }
+      gh += '</div>';
+      globalSlot.innerHTML = gh;
+    }
+
+    // 2. Built-in Commands section
+    const builtinSlot = document.getElementById('cc-builtin-section');
+    if (builtinSlot) {
+      let bh = '<h2>&#9889; Built-in Commands (' + data.builtin.length + ')</h2>';
+      bh += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+      data.builtin.forEach(cmd => {
+        bh += '<div style="display:inline-flex;align-items:center;gap:4px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:3px 8px"><code style="font-size:11px;color:var(--accent);font-weight:600">' + esc(cmd.name) + '</code><span style="font-size:10px;color:var(--text-dim)">' + esc(cmd.description) + '</span></div>';
+      });
+      bh += '</div>';
+      builtinSlot.innerHTML = bh;
+    }
+
+    // 3. Project Skills slots
+    (data.projects || []).forEach(proj => {
+      const slotId = 'proj-skills-' + proj.project.replace(/[^a-zA-Z0-9]/g, '');
+      // Try matching by project name suffix (slug ends with project name)
+      const slots = document.querySelectorAll('[id^="proj-skills-"]');
+      for (const slot of slots) {
+        if (slot.id.endsWith(proj.project.replace(/[^a-zA-Z0-9]/g, ''))) {
+          let ph = '<div style="font-size:12px;font-weight:600;color:var(--cyan);margin-bottom:4px">Skills (' + proj.commands.length + ')</div>';
+          ph += '<div style="display:flex;flex-wrap:wrap;gap:4px">';
+          proj.commands.forEach(cmd => {
+            ph += '<div style="display:inline-flex;align-items:center;gap:3px;background:var(--cyan)08;border:1px solid var(--cyan)33;border-radius:4px;padding:2px 6px" title="' + esc(cmd.description) + '"><code style="font-size:10px;color:var(--cyan);font-weight:600">' + esc(cmd.name) + '</code></div>';
+          });
+          ph += '</div>';
+          slot.innerHTML = ph;
+          break;
+        }
+      }
+    });
+  }).catch(() => {});
+}
+
+function toggleProjectCard(idx) {
+  const body = document.getElementById('proj-body-' + idx);
+  const toggle = document.getElementById('toggle-proj-' + idx);
+  if (!body) return;
+  body.classList.toggle('open');
+  if (toggle) toggle.innerHTML = body.classList.contains('open') ? '&#9660;' : '&#9654;';
+}
+
+function renderProjectCardBody(proj) {
+  let html = '';
+
+  // Project settings
+  if (proj.settings) {
+    html += '<div style="margin-bottom:12px">';
+    html += '<div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:6px">Settings</div>';
+    const s = proj.settings;
+    if (s.permissions) {
+      const p = s.permissions;
+      if (p.allow?.length) html += '<div style="font-size:11px;margin-bottom:4px"><span style="color:var(--green);font-weight:600">Allow (' + p.allow.length + '):</span> ' + p.allow.map(r => '<code style="font-size:10px;background:var(--green)11;color:var(--green);padding:1px 4px;border-radius:3px;margin:1px">' + esc(r) + '</code>').join(' ') + '</div>';
+      if (p.deny?.length) html += '<div style="font-size:11px;margin-bottom:4px"><span style="color:var(--red);font-weight:600">Deny (' + p.deny.length + '):</span> ' + p.deny.map(r => '<code style="font-size:10px;background:var(--red)11;color:var(--red);padding:1px 4px;border-radius:3px;margin:1px">' + esc(r) + '</code>').join(' ') + '</div>';
+      if (p.additionalDirectories?.length) html += '<div style="font-size:11px;margin-top:4px"><span style="color:var(--text);font-weight:600">Additional Dirs:</span><br>' + p.additionalDirectories.map(d => '<code style="font-size:10px;color:var(--text-dim)">' + esc(d) + '</code>').join('<br>') + '</div>';
+    }
+    html += '</div>';
+  }
+
+  // Project MCP servers
+  const mcpEntries = Object.entries(proj.mcpServers || {});
+  if (mcpEntries.length > 0) {
+    html += '<div style="margin-bottom:12px">';
+    html += '<div style="font-size:12px;font-weight:600;color:var(--pink);margin-bottom:6px">MCP Servers (' + mcpEntries.length + ')</div>';
+    html += mcpEntries.map(([name, config]) => renderMcpServerCard(name, config, 'project')).join('');
+    html += '</div>';
+  }
+
+  // Project CLAUDE.md instructions (collapsible, collapsed by default)
+  if (proj.claudeMd) {
+    const instrId = 'proj-instr-' + proj.slug.replace(/[^a-zA-Z0-9]/g, '');
+    html += '<div style="margin-bottom:12px">';
+    html += '<div style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="var el=document.getElementById(\'' + instrId + '\');var t=document.getElementById(\'t-' + instrId + '\');el.style.display=el.style.display===\'none\'?\'block\':\'none\';t.innerHTML=el.style.display===\'none\'?\'&#9654;\':\'&#9660;\'">';
+    html += '<span id="t-' + instrId + '" style="color:var(--text-dim);font-size:10px">&#9654;</span>';
+    html += '<span style="font-size:12px;font-weight:600;color:var(--orange)">CLAUDE.md <span style="color:var(--text-dim);font-weight:400">(' + proj.claudeMdLines + ' lines)</span></span>';
+    html += '</div>';
+    html += '<div style="font-size:10px;margin:4px 0 6px 18px">' + vscodeLink(proj.claudeMdPath) + '</div>';
+    html += '<div id="' + instrId + '" style="display:none;margin-left:18px"><div class="settings-code" style="max-height:300px">' + esc(proj.claudeMd.length > 3000 ? proj.claudeMd.slice(0, 3000) + '\n... (truncated)' : proj.claudeMd) + '</div></div>';
+    html += '</div>';
+  }
+
+  // Memory
+  const memories = (proj.memories || []).filter(m => !m.isIndex);
+  const index = (proj.memories || []).find(m => m.isIndex);
+  if (memories.length > 0) {
+    html += '<div style="margin-bottom:12px">';
+    html += '<div style="font-size:12px;font-weight:600;color:var(--green);margin-bottom:6px">Memory (' + memories.length + ' files)</div>';
+    memories.forEach((m, mi) => {
+      const uid = proj.slug.replace(/[^a-zA-Z0-9]/g, '') + mi;
+      html += '<div class="memory-card">';
+      html += '<div class="mem-header"><div><span style="font-size:12px;font-weight:600">' + esc(m.name) + '</span> <span class="mem-type ' + m.type + '" style="margin-left:6px">' + esc(m.type) + '</span></div>';
+      html += '<button style="background:none;border:1px solid var(--border);color:var(--text-dim);padding:2px 8px;border-radius:3px;cursor:pointer;font-size:10px" onclick="document.getElementById(\'cfg-mem-' + uid + '\').style.display=document.getElementById(\'cfg-mem-' + uid + '\').style.display===\'none\'?\'block\':\'none\'">view</button>';
+      html += '</div>';
+      if (m.description) html += '<div style="font-size:11px;color:var(--text-dim);margin-top:4px">' + esc(m.description) + '</div>';
+      html += '<div id="cfg-mem-' + uid + '" style="display:none;margin-top:8px"><div class="settings-code" style="max-height:200px;font-size:11px">' + esc(m.body) + '</div></div>';
+      html += '</div>';
+    });
+    if (index) {
+      html += '<div style="margin-top:8px"><div style="font-size:11px;font-weight:600;color:var(--text-dim);margin-bottom:4px">MEMORY.md Index</div>';
+      html += '<div style="font-size:10px;margin-bottom:4px">' + vscodeLink(index.path) + '</div>';
+      html += '<div class="settings-code" style="max-height:150px;font-size:10px">' + esc(index.content) + '</div></div>';
+    }
+    html += '</div>';
+  }
+
+  // Project Skills (async placeholder, filled after skills API loads)
+  const skillSlotId = 'proj-skills-' + proj.slug.replace(/[^a-zA-Z0-9]/g, '');
+  html += '<div id="' + skillSlotId + '" style="margin-bottom:12px"></div>';
+
+  if (!proj.settings && mcpEntries.length === 0 && memories.length === 0 && !proj.claudeMd) {
+    html += '<div style="color:var(--text-dim);font-size:12px;padding:8px 0">No settings, MCP servers, or memory files for this project.</div>';
+  }
+
+  return html;
+}
+
+function renderGlobalSettingsFromData(s) {
+  if (!s) return '<div style="color:var(--text-dim);font-size:12px">No global settings found</div>';
+  const sections = [];
+  if (s.permissions) {
+    const p = s.permissions;
+    sections.push('<div style="margin-bottom:12px">' +
+      '<div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:6px">Permission Mode: <span style="color:var(--accent)">' + esc(p.defaultMode || 'ask') + '</span></div>' +
+      (p.allow?.length ? '<div style="font-size:11px;margin-bottom:4px"><span style="color:var(--green);font-weight:600">Allow (' + p.allow.length + '):</span> ' + p.allow.map(r => '<code style="font-size:10px;background:var(--green)11;color:var(--green);padding:1px 4px;border-radius:3px;margin:1px">' + esc(r) + '</code>').join(' ') + '</div>' : '') +
+      (p.deny?.length ? '<div style="font-size:11px;margin-bottom:4px"><span style="color:var(--red);font-weight:600">Deny (' + p.deny.length + '):</span> ' + p.deny.map(r => '<code style="font-size:10px;background:var(--red)11;color:var(--red);padding:1px 4px;border-radius:3px;margin:1px">' + esc(r) + '</code>').join(' ') + '</div>' : '') +
+      (p.ask?.length ? '<div style="font-size:11px"><span style="color:var(--orange);font-weight:600">Ask (' + p.ask.length + '):</span> <span style="color:var(--text-dim);cursor:pointer" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'inline\':\'none\';this.style.display=\'none\'">click to expand...</span><span style="display:none">' + p.ask.map(r => '<code style="font-size:10px;background:var(--orange)11;color:var(--orange);padding:1px 4px;border-radius:3px;margin:1px">' + esc(r) + '</code>').join(' ') + '</span></div>' : '') +
+      '</div>');
+  }
+  if (s.env) {
+    sections.push('<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:6px">Environment Variables</div>' +
+      Object.entries(s.env).map(([k,v]) => '<div style="font-size:11px"><code style="color:var(--cyan)">' + esc(k) + '</code> = <code style="color:var(--text-dim)">' + esc(String(v)) + '</code></div>').join('') + '</div>');
+  }
+  if (s.hooks) {
+    sections.push('<div><div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:6px">Hooks</div>' +
+      Object.entries(s.hooks).map(([event, hooks]) => '<div style="font-size:11px;margin-bottom:4px"><span style="color:var(--pink);font-weight:600">' + esc(event) + ':</span> ' +
+        (Array.isArray(hooks) ? hooks : [hooks]).map(h => {
+          const cmds = h.hooks || [h];
+          return cmds.map(c => '<code style="font-size:10px;background:var(--pink)11;color:var(--pink);padding:1px 4px;border-radius:3px">' + esc(c.command || JSON.stringify(c)) + '</code>').join(' ');
+        }).join(' ') + '</div>').join('') + '</div>');
+  }
+  return sections.join('') || '<div class="settings-code">' + esc(JSON.stringify(s, null, 2)) + '</div>';
+}
+
+// ── Copilot Config Page ────────────────────────────────
+async function loadCopilotConfigPage() {
+  try {
+    const res = await fetch('/api/copilot/settings');
+    copilotSettingsCache = await res.json();
+    renderCopilotConfigPage();
+  } catch (e) {
+    document.getElementById('configPage').innerHTML = '<div style="padding:40px;color:var(--red)">Failed to load: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderCopilotConfigPage() {
+  if (!copilotSettingsCache) return;
+  const s = copilotSettingsCache;
+  let html = '';
+
+  // MCP Servers
+  const mcpCount = Object.keys(s.mcpServers || {}).length;
+  html += '<div class="settings-page-section"><h2 style="color:var(--green)">&#9881; GitHub Copilot Settings</h2>';
+
+  html += '<div class="settings-section"><div class="settings-header" onclick="toggleSettingsSection(\'cop-mcp\')" style="border-color:var(--pink)44"><h3 style="color:var(--pink)">MCP Servers (' + mcpCount + ')</h3><span id="toggle-cop-mcp" style="color:var(--text-dim)">&#9654;</span></div>';
+  html += '<div id="cop-mcp" style="display:none" class="settings-body">';
+  if (mcpCount > 0) {
+    html += '<div style="font-size:10px;margin-bottom:8px">' + vscodeLink(s.mcpConfigPath) + '</div>';
+    html += Object.entries(s.mcpServers).map(([name, config]) => renderMcpServerCard(name, config, 'global')).join('');
+  } else {
+    html += '<div style="color:var(--text-dim);font-size:12px">No MCP servers configured</div>';
+  }
+  html += '</div></div>';
+
+  // Instructions (per-project)
+  html += '<div class="settings-section"><div class="settings-header" onclick="toggleSettingsSection(\'cop-instr\')"><h3 style="color:var(--orange)">Copilot Instructions (' + (s.projectInstructions || []).length + ' projects)</h3><span id="toggle-cop-instr" style="color:var(--text-dim)">&#9654;</span></div>';
+  html += '<div id="cop-instr" style="display:none" class="settings-body">';
+  if ((s.projectInstructions || []).length > 0) {
+    s.projectInstructions.forEach(inst => {
+      html += '<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:var(--orange);margin-bottom:4px">' + esc(inst.project) + ' <span style="color:var(--text-dim);font-weight:400">(' + inst.lines + ' lines)</span></div>';
+      html += '<div style="font-size:10px;margin-bottom:6px">' + vscodeLink(inst.path) + '</div>';
+      html += '<div class="settings-code" style="max-height:300px">' + esc(inst.content) + '</div></div>';
+    });
+  } else {
+    html += '<div style="color:var(--text-dim);font-size:12px">No copilot-instructions.md found in any project</div>';
+  }
+  html += '</div></div>';
+
+  // Custom Agents
+  html += '<div class="settings-section"><div class="settings-header" onclick="toggleSettingsSection(\'cop-agents\')"><h3 style="color:var(--cyan)">Custom Agents (' + (s.agents || []).length + ')</h3><span id="toggle-cop-agents" style="color:var(--text-dim)">&#9654;</span></div>';
+  html += '<div id="cop-agents" style="display:none" class="settings-body">';
+  if (s.agents && s.agents.length > 0) {
+    html += '<div style="font-size:10px;margin-bottom:8px">' + vscodeLink(s.agentsDir) + '</div>';
+    s.agents.forEach((a, i) => {
+      html += '<div class="agent-card" style="flex-direction:column;align-items:stretch"><div style="display:flex;align-items:center;gap:10px">';
+      html += '<div class="agent-icon" style="background:var(--cyan)22;color:var(--cyan)">A</div>';
+      html += '<div style="flex:1"><div style="font-size:13px;font-weight:600">' + esc(a.name) + '</div>';
+      html += '<div style="font-size:11px;color:var(--text-dim)">' + esc(a.description) + '</div></div>';
+      html += '<div style="font-size:10px;color:var(--text-faint)">' + esc(a.file) + '</div>';
+      html += '</div></div>';
+    });
+  } else {
+    html += '<div style="color:var(--text-dim);font-size:12px">No custom agents</div>';
+  }
+  html += '</div></div>';
+
+  // Reusable Prompts (grouped by project)
+  html += '<div class="settings-section"><div class="settings-header" onclick="toggleSettingsSection(\'cop-prompts\')"><h3 style="color:var(--purple)">Reusable Prompts (' + (s.prompts || []).length + ')</h3><span id="toggle-cop-prompts" style="color:var(--text-dim)">&#9654;</span></div>';
+  html += '<div id="cop-prompts" style="display:none" class="settings-body">';
+  if (s.prompts && s.prompts.length > 0) {
+    // Group prompts by project
+    const byProject = {};
+    s.prompts.forEach(p => {
+      const proj = p.project || 'unknown';
+      if (!byProject[proj]) byProject[proj] = [];
+      byProject[proj].push(p);
+    });
+    Object.entries(byProject).forEach(([proj, prompts]) => {
+      html += '<div style="margin-bottom:8px"><div style="font-size:11px;font-weight:600;color:var(--cyan);margin-bottom:4px">' + esc(proj) + ' (' + prompts.length + ')</div>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+      prompts.forEach(p => {
+        html += '<code style="font-size:10px;background:var(--purple)11;color:var(--purple);padding:2px 8px;border-radius:3px">' + esc(p.name) + '</code>';
+      });
+      html += '</div></div>';
+    });
+  } else {
+    html += '<div style="color:var(--text-dim);font-size:12px">No reusable prompts found</div>';
+  }
+  html += '</div></div>';
+
+  html += '</div>'; // end global settings section
+
+  // ─── Built-in Commands & Participants ──────────
+  html += '<div class="settings-page-section" id="cop-builtin-section"><h2>&#9889; Built-in Commands &amp; Participants</h2>';
+  html += '<div style="color:var(--text-dim);font-size:12px">Loading...</div>';
+  html += '</div>';
+
+  // Config
+  if (s.config) {
+    html += '<div class="settings-page-section"><h2>&#9881; General Config</h2>';
+    html += '<div style="font-size:10px;margin-bottom:8px">' + vscodeLink(s.configPath) + '</div>';
+    html += '<div class="settings-code">' + esc(JSON.stringify(s.config, null, 2)) + '</div>';
+    html += '</div>';
+  }
+
+  document.getElementById('configPage').innerHTML = html;
+
+  // Load built-in commands async
+  fetch('/api/copilot/skills').then(r => r.json()).then(data => {
+    const el = document.getElementById('cop-builtin-section');
+    if (!el) return;
+    let h = '<h2>&#9889; Built-in Commands &amp; Participants</h2>';
+    h += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">';
+    data.builtinCommands.forEach(cmd => {
+      h += '<div style="display:inline-flex;align-items:center;gap:4px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:3px 8px"><code style="font-size:11px;color:var(--accent);font-weight:600">' + esc(cmd.name) + '</code><span style="font-size:10px;color:var(--text-dim)">' + esc(cmd.description) + '</span></div>';
+    });
+    h += '</div>';
+    h += '<div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:6px">Chat Participants</div>';
+    h += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+    data.builtinParticipants.forEach(p => {
+      h += '<div style="display:inline-flex;align-items:center;gap:4px;background:var(--green)08;border:1px solid var(--green)33;border-radius:4px;padding:3px 8px"><code style="font-size:11px;color:var(--green);font-weight:600">' + esc(p.name) + '</code><span style="font-size:10px;color:var(--text-dim)">' + esc(p.description) + '</span></div>';
+    });
+    h += '</div>';
+    el.innerHTML = h;
+  }).catch(() => {});
+}
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}`);
+  ws.onopen = () => { setConn(true); };
+  ws.onclose = () => { setConn(false); setTimeout(connectWS, 3000); };
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'sessions' && currentAgent === 'claude-code') { sessions = msg.data; refresh(); }
+  };
+}
+
+function setConn(ok) {
+  const el = document.getElementById('connStatus');
+  el.innerHTML = ok ? '<span class="status-dot alive"></span> Live' : '<span class="status-dot dead"></span> Reconnecting';
+  el.className = ok ? 'conn-status ok' : 'conn-status err';
+}
+
+function setFilter(f) {
+  filter = f;
+  document.querySelectorAll('.filter-bar button').forEach(b => b.classList.toggle('active', b.textContent.toLowerCase().includes(f === 'all' ? 'all' : f)));
+  renderList();
+}
+
+function refresh() {
+  const active = sessions.filter(s => s.alive).length;
+  const totalAgents = sessions.reduce((s, x) => s + (x.agents?.length || 0), 0);
+  document.getElementById('activeCount').textContent = active;
+  document.getElementById('totalCount').textContent = sessions.length;
+  document.getElementById('agentCount').textContent = totalAgents;
+  const projects = [...new Set(sessions.map(s => s.project).filter(Boolean))];
+  document.getElementById('projectList').textContent = projects.map(p => p.split('--').pop()).join(' | ');
+  renderList();
+  // Don't re-render detail panel if on a stateful tab or if user is typing in an input
+  const inputFocused = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
+  if (selectedId && !statefulTabs.has(activeTab) && !inputFocused) renderDetail(selectedId);
+}
+
+function filtered() {
+  if (filter === 'active') return sessions.filter(s => s.alive);
+  if (filter === 'historical') return sessions.filter(s => !s.alive);
+  return sessions;
+}
+
+function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+function timeAgo(ts) {
+  if (!ts) return '';
+  const d = typeof ts === 'number' ? ts : new Date(ts).getTime();
+  const diff = Date.now() - d;
+  if (diff < 60000) return 'now';
+  if (diff < 3600000) return Math.floor(diff/60000) + 'm';
+  if (diff < 86400000) return Math.floor(diff/3600000) + 'h';
+  return Math.floor(diff/86400000) + 'd';
+}
+function fmtTime(ts) {
+  if (!ts) return '';
+  const d = typeof ts === 'number' ? new Date(ts) : new Date(ts);
+  return d.toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+function fmtDate(ts) {
+  if (!ts) return '';
+  const d = typeof ts === 'number' ? new Date(ts) : new Date(ts);
+  return d.toLocaleDateString('en-US', {month:'short',day:'numeric'}) + ' ' + d.toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'});
+}
+function shortPath(p) {
+  if (!p) return '';
+  const parts = p.replace(/\\/g,'/').split('/');
+  return parts.length > 2 ? '.../' + parts.slice(-2).join('/') : p;
+}
+function epBadge(ep) {
+  if (ep?.includes('vscode')) return '<span class="badge vscode">VSCode</span>';
+  if (ep?.includes('cli') || ep === 'interactive') return '<span class="badge cli">CLI</span>';
+  if (ep?.includes('web')) return '<span class="badge web">Web</span>';
+  return `<span class="badge unknown">${esc(ep||'?')}</span>`;
+}
+function agentIcon(type) {
+  if (type?.includes('Explore') || type?.includes('explore')) return 'explore';
+  if (type?.includes('guide')) return 'guide';
+  return 'general';
+}
+
+function renderList() {
+  const el = document.getElementById('sessionList');
+  const list = filtered();
+  if (!list.length) { el.innerHTML = '<div class="empty-state">No sessions</div>'; return; }
+  el.innerHTML = list.map(s => {
+    const agentDots = (s.agents || []).slice(-8).map(a =>
+      `<span class="agent-dot ${a.status}" title="${esc(a.description)}"></span>`
+    ).join('');
+    const todoProgress = (s.todos || []).length > 0
+      ? ` | TODO: ${s.todos.filter(t=>t.status==='completed').length}/${s.todos.length}`
+      : '';
+    return `
+    <div class="session-card ${s.sessionId===selectedId?'selected':''}" onclick="selectSession('${s.sessionId}')">
+      <div class="session-title">
+        <span class="status-dot ${s.alive?'alive':'dead'}"></span>
+        ${esc(s.displayName || s.title || s.sessionId.slice(0,8))}
+        ${s.customName ? '<span style="font-size:9px;color:var(--cyan);margin-left:4px">✎</span>' : ''}
+        ${!s.alive && !s.hasMetadata ? '<span class="badge historical">hist</span>' : ''}
+      </div>
+      <div class="session-meta">
+        ${epBadge(s.entrypoint)}
+        <span>${esc(shortPath(s.cwd))}</span>
+        <span>${timeAgo(s.startedAt)} ago</span>
+        ${agentDots ? `<span class="agent-dots">${agentDots}</span>` : ''}
+      </div>
+      <div class="session-stats">
+        <span>Msgs: ${s.totalUserMessages+s.totalAssistantMessages}</span>
+        <span>Tools: ${s.totalToolCalls}</span>
+        <span>Agents: ${(s.agents||[]).length}</span>
+        <span>${Math.round(s.fileSizeKB||0)}KB</span>
+        ${todoProgress}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function selectSession(id) {
+  selectedId = id; renderList(); renderDetail(id);
+}
+
+function setTab(tab) { activeTab = tab; if (selectedId) renderDetail(selectedId); }
+
+async function renameSession(sessionId, name) {
+  try {
+    const res = await fetch(`/api/sessions/${sessionId}/name`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
+    if (res.ok) {
+      // Update local session data
+      const s = sessions.find(x => x.sessionId === sessionId);
+      if (s) {
+        s.customName = name.trim() || null;
+        s.displayName = s.customName || s.title || s.sessionId.slice(0, 8);
+      }
+      renderList();
+      renderDetail(sessionId);
+    }
+  } catch (e) {
+    console.error('Rename failed:', e);
+  }
+}
+
+async function closeSession(sessionId, pid) {
+  if (!confirm('Close this Claude Code session (PID ' + pid + ')? The process will be terminated.')) return;
+  const btn = document.getElementById('close-btn-' + sessionId);
+  if (btn) { btn.disabled = true; btn.textContent = 'Closing...'; btn.style.opacity = '0.5'; }
+  try {
+    const res = await fetch('/api/sessions/' + sessionId + '/close', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    if (res.ok) {
+      // Mark session as dead locally
+      const s = sessions.find(x => x.sessionId === sessionId);
+      if (s) s.alive = false;
+      renderList();
+      renderDetail(sessionId);
+    } else {
+      alert('Close failed: ' + (data.error || 'Unknown error'));
+      if (btn) { btn.disabled = false; btn.textContent = 'Close Session (PID ' + pid + ')'; btn.style.opacity = '1'; }
+    }
+  } catch (e) {
+    alert('Close failed: ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Close Session (PID ' + pid + ')'; btn.style.opacity = '1'; }
+  }
+}
+
+function renderDetail(id) {
+  const s = sessions.find(x => x.sessionId === id);
+  if (!s) return;
+  const el = document.getElementById('detailPanel');
+
+  el.innerHTML = `
+    <div class="tab-bar">
+      <div class="tab ${activeTab==='overview'?'active':''}" onclick="setTab('overview')">Overview</div>
+      <div class="tab ${activeTab==='agents'?'active':''}" onclick="setTab('agents')">Agents (${(s.agents||[]).length})</div>
+      <div class="tab ${activeTab==='activity'?'active':''}" onclick="setTab('activity')">Activity (${(s.recentEvents||[]).length})</div>
+      <div class="tab ${activeTab==='compound'?'active':''}" onclick="setTab('compound')" style="color:${activeTab==='compound'?'var(--cyan)':''}">AI Summary</div>
+      <div class="tab ${activeTab==='cron'?'active':''}" onclick="setTab('cron')">Cron (${(s.cronJobs||[]).length})</div>
+    </div>
+    <div class="tab-content">
+      ${activeTab==='overview' ? renderOverview(s) : ''}
+      ${activeTab==='agents' ? renderAgents(s) : ''}
+      ${activeTab==='activity' ? renderActivity(s) : ''}
+      ${activeTab==='compound' ? renderCompound(s) : ''}
+      ${activeTab==='cron' ? renderCron(s) : ''}
+    </div>
+  `;
+}
+
+function renderOverview(s) {
+  const nameSection = `
+    <div class="workflow-section">
+      <h3>Session Name</h3>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <input id="rename-input" type="text" value="${esc(s.customName || s.title || '')}"
+          placeholder="${esc(s.title || s.sessionId.slice(0,8))}"
+          style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-size:13px;outline:none"
+          onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
+          onkeydown="if(event.key==='Enter')renameSession('${s.sessionId}',this.value)">
+        <button onclick="renameSession('${s.sessionId}',document.getElementById('rename-input').value)"
+          style="background:var(--accent)22;color:var(--accent);border:1px solid var(--accent)44;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px">Rename</button>
+        ${s.customName ? `<button onclick="renameSession('${s.sessionId}','')"
+          style="background:var(--surface2);color:var(--text-dim);border:1px solid var(--border);padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px">Reset</button>` : ''}
+      </div>
+      ${s.suggestedName ? `
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px">Suggested name based on content:</div>
+        <div style="font-size:12px;color:var(--text-faint);background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px;cursor:pointer;max-height:60px;overflow:hidden"
+          onclick="document.getElementById('rename-input').value=this.textContent.trim()" title="Click to use this name">
+          ${esc(s.suggestedName.slice(0, 200))}
+        </div>
+      ` : ''}
+    </div>`;
+
+  const todoHtml = (s.todos || []).length > 0
+    ? `<div class="workflow-section">
+        <h3>Current Tasks (TODO)</h3>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;overflow:hidden">
+          ${s.todos.map(t => `
+            <div class="todo-item">
+              <div class="todo-check ${t.status}">${t.status==='completed'?'✓':t.status==='in_progress'?'▶':''}</div>
+              <div class="todo-text ${t.status}">${esc(t.status==='in_progress'?t.activeForm:t.content)}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>` : '';
+
+  // Compact AI Summary card for Overview (uses cached or server-provided data)
+  const aiData = window['ai-summary-' + s.sessionId] || s.aiSummary;
+  if (aiData && !window['ai-summary-' + s.sessionId]) window['ai-summary-' + s.sessionId] = aiData;
+  const aiCardHtml = aiData
+    ? `<div class="workflow-section">
+        <h3 style="color:var(--cyan)">AI Summary</h3>
+        <div style="background:var(--surface);border:1px solid var(--cyan)33;border-radius:6px;padding:12px">
+          <div style="font-weight:600;font-size:13px;margin-bottom:6px">${esc(aiData.briefName || aiData.summary?.split(/[.\n]/)[0]?.slice(0,60) || '')}</div>
+          <div style="font-size:12px;color:var(--text-dim);line-height:1.6;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(aiData.summary?.slice(0,200) || '')}</div>
+          <div style="margin-top:8px;text-align:right"><span style="font-size:11px;color:var(--accent);cursor:pointer" onclick="setTab('compound')">View full summary &rarr;</span></div>
+        </div>
+      </div>`
+    : `<div class="workflow-section">
+        <h3 style="color:var(--cyan)">AI Summary</h3>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px;display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:12px;color:var(--text-dim)">No AI summary generated yet</span>
+          <button onclick="setTab('compound')" style="background:var(--cyan)22;color:var(--cyan);border:1px solid var(--cyan)44;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600">Generate &rarr;</button>
+        </div>
+      </div>`;
+
+  return `
+    <div class="info-grid">
+      <div class="info-card"><div class="label">Status</div><div class="value" style="color:${s.alive?'var(--green)':'var(--text-dim)'}">${s.alive?'Active':'Ended'}${s.alive?` <span style="font-size:10px;color:var(--text-faint)">(PID ${s.pid})</span>`:''}</div></div>
+      <div class="info-card"><div class="label">Messages</div><div class="value">${s.totalUserMessages+s.totalAssistantMessages}</div></div>
+      <div class="info-card"><div class="label">Tool Calls</div><div class="value">${s.totalToolCalls}</div></div>
+      <div class="info-card"><div class="label">Agents</div><div class="value">${(s.agents||[]).length}</div></div>
+      <div class="info-card"><div class="label">Started</div><div class="value small">${fmtDate(s.startedAt)}</div></div>
+      <div class="info-card"><div class="label">Last Activity</div><div class="value small">${s.lastActivity?timeAgo(s.lastActivity)+' ago':'N/A'}</div></div>
+      <div class="info-card"><div class="label">Project</div><div class="value small">${esc(s.project?.split('--').pop()||'?')}</div></div>
+      <div class="info-card"><div class="label">Entrypoint</div><div class="value small">${esc(s.entrypoint)}</div></div>
+    </div>
+    ${s.alive ? `
+    <div class="workflow-section">
+      <div style="display:flex;align-items:center;gap:12px">
+        <button onclick="closeSession('${s.sessionId}','${s.pid}')"
+          style="background:var(--red)22;color:var(--red);border:1px solid var(--red)44;padding:6px 16px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600"
+          id="close-btn-${s.sessionId}">Close Session (PID ${s.pid})</button>
+        <span style="font-size:11px;color:var(--text-faint)">Sends SIGTERM to terminate this Claude Code process</span>
+      </div>
+    </div>` : ''}
+    ${nameSection}
+    ${aiCardHtml}
+    ${todoHtml}
+  `;
+}
+
+function renderAgents(s) {
+  const agents = (s.agents || []).slice().sort((a, b) => {
+    const ta = a.spawnedAt ? new Date(a.spawnedAt).getTime() : 0;
+    const tb = b.spawnedAt ? new Date(b.spawnedAt).getTime() : 0;
+    return ta - tb;
+  });
+  if (!agents.length) return '<div class="empty-state">No sub-agents spawned in this session</div>';
+
+  const running = agents.filter(a => a.status === 'running');
+  const completed = agents.filter(a => a.status === 'completed');
+
+  // Group agents by time proximity (within 5s = parallel)
+  const groups = [];
+  let currentGroup = [];
+  for (const a of agents) {
+    const t = a.spawnedAt ? new Date(a.spawnedAt).getTime() : 0;
+    if (currentGroup.length === 0) {
+      currentGroup.push(a);
+    } else {
+      const prevT = currentGroup[0].spawnedAt ? new Date(currentGroup[0].spawnedAt).getTime() : 0;
+      if (Math.abs(t - prevT) < 5000) {
+        currentGroup.push(a); // parallel
+      } else {
+        groups.push(currentGroup);
+        currentGroup = [a];
+      }
+    }
+  }
+  if (currentGroup.length > 0) groups.push(currentGroup);
+
+  let agentIdx = 0;
+  const groupsHtml = groups.map(group => {
+    const isParallel = group.length > 1;
+    const timeLabel = fmtTime(group[0].spawnedAt);
+    const agentsHtml = group.map(a => {
+      agentIdx++;
+      return `
+        <div class="agent-card" style="${a.status==='running'?'border-color:var(--orange)44':''}${isParallel?';margin-left:20px':''}">
+          <div class="agent-icon ${agentIcon(a.subagentType)}">${agentIdx}</div>
+          <div class="agent-info">
+            <div class="agent-name">${esc(a.description)}</div>
+            <div class="agent-type">${esc(a.subagentType)} ${a.runInBackground?'· bg':''} · ${fmtTime(a.spawnedAt)}</div>
+          </div>
+          <span class="agent-status ${a.status}">${a.status === 'running' ? '● running' : a.status}</span>
+        </div>`;
+    }).join('');
+
+    if (isParallel) {
+      return `
+        <div style="margin-bottom:4px">
+          <div style="font-size:10px;color:var(--cyan);margin-bottom:4px;display:flex;align-items:center;gap:6px">
+            <span style="display:inline-block;width:16px;height:1px;background:var(--cyan)"></span>
+            PARALLEL (${group.length} agents @ ${timeLabel})
+            <span style="flex:1;height:1px;background:var(--border)"></span>
+          </div>
+          ${agentsHtml}
+        </div>`;
+    }
+    return agentsHtml;
+  }).join('');
+
+  return `
+    <div class="workflow-section">
+      <h3>Agent Workflow — Main Agent + ${agents.length} Sub-Agents (${running.length} active, ${completed.length} completed)</h3>
+      <div class="agent-card" style="border-color:var(--accent)">
+        <div class="agent-icon main">M</div>
+        <div class="agent-info">
+          <div class="agent-name">${esc(s.title || 'Main Agent')}</div>
+          <div class="agent-type">orchestrator · ${s.entrypoint} · started ${fmtDate(s.startedAt)}</div>
+        </div>
+        <span class="agent-status ${s.alive?'running':'completed'}">${s.alive?'running':'completed'}</span>
+      </div>
+      <div style="padding-left:20px;border-left:2px solid var(--border);margin-left:16px">
+        ${groupsHtml}
+      </div>
+    </div>
+  `;
+}
+
+// ── Activity Tab (merged Timeline + Events) ──────────
+function setActivityView(v) { activityView = v; if (selectedId) renderDetail(selectedId); }
+
+function renderActivity(s) {
+  const toggleHtml = `
+    <div style="display:flex;gap:4px;margin-bottom:12px;align-items:center">
+      <button onclick="setActivityView('table')" title="Curated view · Oldest first · Duplicate events merged" style="padding:4px 12px;border-radius:4px;border:1px solid ${activityView==='table'?'var(--accent)':'var(--border)'};background:${activityView==='table'?'var(--accent)22':'var(--surface)'};color:${activityView==='table'?'var(--accent)':'var(--text-dim)'};cursor:pointer;font-size:12px">Event Log</button>
+      <button onclick="setActivityView('timeline')" title="Full detail · Newest first · Visual workflow timeline" style="padding:4px 12px;border-radius:4px;border:1px solid ${activityView==='timeline'?'var(--accent)':'var(--border)'};background:${activityView==='timeline'?'var(--accent)22':'var(--surface)'};color:${activityView==='timeline'?'var(--accent)':'var(--text-dim)'};cursor:pointer;font-size:12px">Timeline</button>
+    </div>`;
+  return toggleHtml + (activityView === 'timeline' ? renderTimeline(s) : renderEvents(s));
+}
+
+function renderTimeline(s) {
+  const events = s.recentEvents || [];
+  if (!events.length) return '<div class="empty-state">No timeline events</div>';
+
+  // Build workflow nodes from events — show user messages, agent spawns, skills
+  const nodes = [];
+  for (const evt of events) {
+    if (evt.type === 'user' && evt.text) {
+      nodes.push({ cls: 'user', label: 'User', content: evt.text.slice(0,200), time: evt.timestamp });
+    }
+    if (evt.type === 'assistant') {
+      // Check for agent/skill tool calls
+      const agentTools = (evt.tools||[]).filter(t => t.tool === 'Agent');
+      const skillTools = (evt.tools||[]).filter(t => t.tool === 'Skill');
+      const otherTools = (evt.tools||[]).filter(t => t.tool !== 'Agent' && t.tool !== 'Skill');
+
+      if (agentTools.length > 0) {
+        for (const a of agentTools) {
+          nodes.push({ cls: 'agent', label: 'Agent Spawn', content: a.input, time: evt.timestamp });
+        }
+      }
+      if (skillTools.length > 0) {
+        for (const sk of skillTools) {
+          nodes.push({ cls: 'skill', label: 'Skill', content: sk.input, time: evt.timestamp });
+        }
+      }
+      if (evt.text && !agentTools.length) {
+        const toolSummary = otherTools.length > 0 ? ` [${otherTools.map(t=>t.tool).join(', ')}]` : '';
+        nodes.push({ cls: 'tool', label: 'Assistant', content: (evt.text.slice(0,150) + toolSummary).slice(0,200), time: evt.timestamp });
+      } else if (otherTools.length > 0 && !agentTools.length) {
+        nodes.push({ cls: 'tool', label: 'Tools', content: otherTools.map(t => `${t.tool}: ${t.input?.slice(0,60)||''}`).join(' | ').slice(0,200), time: evt.timestamp });
+      }
+    }
+    if (evt.type === 'skill') {
+      nodes.push({ cls: 'skill', label: 'Skill', content: evt.skill + (evt.args ? ' ' + evt.args : ''), time: evt.timestamp });
+    }
+  }
+
+  return `
+    <div class="workflow-section"><h3>Activity Timeline <span style="font-size:11px;font-weight:400;color:var(--text-faint)">(newest first)</span></h3></div>
+    <div class="workflow-timeline">
+      ${nodes.slice(-40).reverse().map(n => `
+        <div class="wf-node ${n.cls}">
+          <span class="wf-label">${n.label}</span> <span class="wf-time">${fmtTime(n.time)}</span>
+          <div class="wf-content">${esc(n.content)}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function setEventFilter(f) { eventFilter = f; eventPage = 0; if (selectedId) renderDetail(selectedId); }
+function setEventOrder(o) { eventOrder = o; eventPage = 0; if (selectedId) renderDetail(selectedId); }
+function setEventPage(p) { eventPage = p; if (selectedId) renderDetail(selectedId); }
+
+function renderEvents(s) {
+  let events = (s.recentEvents || []).slice();
+
+  // Apply filter
+  if (eventFilter === 'user') {
+    events = events.filter(e => e.type === 'user' || e.type === 'remote-input');
+  } else if (eventFilter === 'feishu') {
+    events = events.filter(e => e.type === 'remote-input');
+  } else if (eventFilter === 'substantive') {
+    events = events.filter(e => e.hasContent === true);
+  } else if (eventFilter === 'agents') {
+    events = events.filter(e => e.type === 'user' || e.type === 'remote-input' || e.hasAgent === true || e.type === 'skill');
+  }
+  // 'all' shows everything including cron triggers
+
+  // Merge consecutive duplicate events (e.g. repeated empty cron polls)
+  const merged = [];
+  for (const evt of events) {
+    const prev = merged.length > 0 ? merged[merged.length - 1] : null;
+    if (prev && prev.type === evt.type && prev.type === 'cron-trigger') {
+      // Collapse consecutive cron triggers
+      if (!prev._mergeCount) prev._mergeCount = 1;
+      prev._mergeCount++;
+      prev._lastTimestamp = evt.timestamp;
+      continue;
+    }
+    if (prev && prev.type === evt.type && prev.type === 'assistant' && !prev.hasContent && !evt.hasContent && !prev.hasAgent && !evt.hasAgent) {
+      // Collapse consecutive empty assistant responses
+      if (!prev._mergeCount) prev._mergeCount = 1;
+      prev._mergeCount++;
+      prev._lastTimestamp = evt.timestamp;
+      continue;
+    }
+    merged.push({ ...evt });
+  }
+  events = merged;
+
+  // Apply order (default=oldest first)
+  if (eventOrder === 'newest') {
+    events = events.slice().reverse();
+  }
+
+  const totalFiltered = events.length;
+  const totalPages = Math.ceil(totalFiltered / EVENTS_PER_PAGE);
+  const pageEvents = events.slice(eventPage * EVENTS_PER_PAGE, (eventPage + 1) * EVENTS_PER_PAGE);
+
+  const filterBtns = [
+    ['substantive', 'Substantive'],
+    ['user', 'User Only'],
+    ['feishu', 'Remote Input'],
+    ['agents', 'User + Agents'],
+    ['all', 'All (incl. cron)']
+  ].map(([k, label]) =>
+    `<button class="ef-btn ${eventFilter===k?'active':''}" onclick="setEventFilter('${k}')">${label}</button>`
+  ).join('');
+
+  const orderBtns = [
+    ['oldest', 'Oldest First'],
+    ['newest', 'Newest First']
+  ].map(([k, label]) =>
+    `<button class="ef-btn ${eventOrder===k?'active':''}" onclick="setEventOrder('${k}')">${label}</button>`
+  ).join('');
+
+  return `
+    <div class="event-filter-bar">
+      ${filterBtns}
+      <div class="ef-sep"></div>
+      ${orderBtns}
+      <div class="ef-sep"></div>
+      <span style="font-size:11px;color:var(--text-faint)">${totalFiltered} events${totalFiltered < (s.recentEvents||[]).length ? ' (from ' + (s.recentEvents||[]).length + ')':''}</span>
+    </div>
+    <div class="event-feed">
+      <div class="event-feed-header">
+        <span>Events (page ${eventPage+1}/${totalPages || 1})</span>
+        <span>Total: ${s.totalUserMessages + s.totalAssistantMessages} messages, ${s.totalToolCalls} tool calls</span>
+      </div>
+      ${pageEvents.length === 0 ? '<div class="event-item" style="color:var(--text-dim)">No events match the current filter</div>' : ''}
+      ${pageEvents.map(evt => {
+        if (evt.type === 'user') {
+          return `<div class="event-item" style="border-left:3px solid var(--accent)">
+            <span class="event-time">${fmtDate(evt.timestamp)}</span>
+            <span class="event-type user">USER</span>
+            <span class="event-text">${esc(evt.text)}</span>
+          </div>`;
+        }
+        if (evt.type === 'assistant') {
+          const toolsHtml = (evt.tools||[]).map(t =>
+            `<span class="tool-tag ${t.tool==='Agent'?'agent':''}">${esc(t.tool)}</span><span class="tool-input">${esc(t.input?.slice(0,80))}</span>`
+          ).join(' ');
+          const borderColor = evt.hasAgent ? 'var(--cyan)' : evt.hasContent ? 'var(--green)' : 'var(--border)';
+          const mergeInfo = evt._mergeCount ? ` <span style="color:var(--text-faint);font-size:10px">(×${evt._mergeCount + 1} similar)</span>` : '';
+          return `<div class="event-item" style="border-left:3px solid ${borderColor}">
+            <span class="event-time">${fmtDate(evt.timestamp)}</span>
+            <span class="event-type assistant">ASST</span>
+            ${evt.text ? `<span class="event-text">${esc(evt.text.slice(0,400))}${mergeInfo}</span>` : mergeInfo}
+            ${toolsHtml ? `<div class="event-tools">${toolsHtml}</div>` : ''}
+          </div>`;
+        }
+        if (evt.type === 'skill') {
+          return `<div class="event-item" style="border-left:3px solid var(--pink)">
+            <span class="event-time">${fmtDate(evt.timestamp)}</span>
+            <span class="event-type skill">SKILL</span>
+            <span class="event-text">${esc(evt.skill)} ${esc(evt.args||'')}</span>
+          </div>`;
+        }
+        if (evt.type === 'remote-input') {
+          const channelColors = { feishu: 'var(--yellow)', teams: 'var(--purple)', wechat: 'var(--green)', slack: 'var(--pink)', remote: 'var(--orange)' };
+          const channelNames = { feishu: 'FEISHU', teams: 'TEAMS', wechat: 'WECHAT', slack: 'SLACK', remote: 'REMOTE' };
+          const color = channelColors[evt.channel] || channelColors.remote;
+          const label = channelNames[evt.channel] || 'REMOTE';
+          return `<div class="event-item" style="border-left:3px solid ${color};background:var(--surface2)">
+            <span class="event-time">${fmtDate(evt.timestamp)}</span>
+            <span class="event-type" style="color:${color}">${label}</span>
+            <span class="event-text">${esc(evt.text)}</span>
+          </div>`;
+        }
+        if (evt.type === 'cron-trigger') {
+          const mergeInfo = evt._mergeCount ? ` <span style="color:var(--text-faint);font-size:10px">(×${evt._mergeCount + 1}, ${fmtDate(evt.timestamp)} – ${fmtDate(evt._lastTimestamp)})</span>` : '';
+          return `<div class="event-item" style="border-left:3px solid var(--text-faint);opacity:0.6">
+            <span class="event-time">${fmtDate(evt.timestamp)}</span>
+            <span class="event-type" style="color:var(--text-faint)">CRON</span>
+            <span class="event-text" style="color:var(--text-faint)">${esc(evt.text?.slice(0,120))}...${mergeInfo}</span>
+          </div>`;
+        }
+        return '';
+      }).join('')}
+    </div>
+    ${totalPages > 1 ? `
+      <div class="event-pager">
+        <button onclick="setEventPage(${eventPage - 1})" ${eventPage <= 0 ? 'disabled' : ''}>← Prev</button>
+        <span>Page ${eventPage + 1} of ${totalPages}</span>
+        <button onclick="setEventPage(${eventPage + 1})" ${eventPage >= totalPages - 1 ? 'disabled' : ''}>Next →</button>
+        <button onclick="setEventPage(0)" ${eventPage <= 0 ? 'disabled' : ''}>First</button>
+        <button onclick="setEventPage(${totalPages - 1})" ${eventPage >= totalPages - 1 ? 'disabled' : ''}>Last</button>
+      </div>
+    ` : ''}
+  `;
+}
+
+function renderCompound(s) {
+  // AI-powered summary — on-demand via claude -p
+  const cachedKey = 'ai-summary-' + s.sessionId;
+  const cached = window[cachedKey];
+  const isLoading = window['ai-summary-loading-' + s.sessionId];
+
+  const summaryHtml = cached ? `
+    <div class="knowledge-card" style="border-color:var(--accent)44;margin-bottom:12px">
+      <h4 style="color:var(--accent)">Session Name</h4>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+        <span style="flex:1;font-size:13px;color:var(--text);font-weight:600">${esc(cached.briefName || (cached.summary ? cached.summary.split(/[.\n]/)[0].slice(0,60) : 'AI Summary'))}</span>
+        <button class="btn-approve" onclick="renameSession('${s.sessionId}','${esc((cached.briefName || (cached.summary ? cached.summary.split(/[.\\n]/)[0].slice(0,60) : '')).replace(/'/g,''))}')">Use as Name</button>
+      </div>
+    </div>
+    <div class="knowledge-card" style="border-color:var(--green)44">
+      <h4 style="color:var(--green)">Summary</h4>
+      <p style="white-space:pre-wrap;line-height:1.8">${esc(cached.summary)}</p>
+      <div class="k-meta">Generated ${fmtDate(cached.generatedAt)}</div>
+    </div>
+    <div class="knowledge-card" style="border-color:var(--cyan)44">
+      <h4>Lessons Learned</h4>
+      <p style="white-space:pre-wrap;line-height:1.8">${esc(cached.lessons)}</p>
+    </div>
+    <div class="knowledge-actions" style="margin-top:12px">
+      <button class="btn-extract" onclick="generateAISummary('${s.sessionId}', true)" id="ai-btn-${s.sessionId}">Regenerate</button>
+    </div>
+  ` : isLoading ? `
+    <div style="text-align:center;padding:40px 20px">
+      <div style="font-size:14px;color:var(--accent);margin-bottom:16px">Generating AI Summary...</div>
+      <div class="spinner" style="margin:0 auto 16px"></div>
+      <div style="font-size:11px;color:var(--text-faint)">Please wait. The summary will appear here when ready.</div>
+    </div>
+  ` : `
+    <div style="text-align:center;padding:40px 20px">
+      ${(window._claudeCliStatus && !window._claudeCliStatus.available) ? `
+      <div style="background:#ff990022;border:1px solid #ff990055;border-radius:6px;padding:12px 16px;margin-bottom:20px;text-align:left">
+        <div style="font-weight:600;color:#ff9900;font-size:13px;margin-bottom:6px">Claude CLI not found</div>
+        <div style="font-size:12px;color:var(--text-dim);line-height:1.6">AI Summary requires Claude Code CLI. Install it with:<br>
+          <code style="color:var(--cyan);background:var(--bg);padding:2px 8px;border-radius:3px;display:inline-block;margin-top:4px">npm install -g @anthropic-ai/claude-code</code>
+        </div>
+      </div>` : ''}
+      <div style="font-size:14px;color:var(--text-dim);margin-bottom:16px">Click the button to generate an AI-powered summary using <code style="color:var(--cyan)">claude -p</code></div>
+      <button class="btn-extract" onclick="generateAISummary('${s.sessionId}')" id="ai-btn-${s.sessionId}" style="font-size:14px;padding:12px 32px"${(window._claudeCliStatus && !window._claudeCliStatus.available) ? ' disabled title="Install Claude CLI first"' : ''}>
+        Generate AI Summary
+      </button>
+      <div style="font-size:11px;color:var(--text-faint);margin-top:12px">This will invoke Claude CLI in pipe mode. May take 30-60 seconds.</div>
+    </div>
+  `;
+
+  return `
+    <div class="compound-intro">
+      <strong>AI Session Analysis</strong> (powered by <code style="color:var(--cyan)">claude -p</code>)<br>
+      On-demand AI-generated summary and lessons learned from this session's conversation history.
+    </div>
+    ${summaryHtml}
+  `;
+}
+
+async function generateAISummary(sessionId, force) {
+  const btn = document.getElementById('ai-btn-' + sessionId);
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Generating... (30-60s)';
+    btn.style.opacity = '0.6';
+  }
+  // Store in-flight state so it survives tab switches
+  window['ai-summary-loading-' + sessionId] = true;
+  try {
+    const res = await fetch('/api/sessions/' + sessionId + '/ai-summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ force: !!force })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Request failed');
+    }
+    const data = await res.json();
+    window['ai-summary-' + sessionId] = data;
+    delete window['ai-summary-loading-' + sessionId];
+    // Re-render only if AI Summary tab is currently visible
+    const el = document.getElementById('ai-btn-' + sessionId) || document.querySelector('.compound-intro');
+    if (el) renderDetail(sessionId);
+  } catch (e) {
+    delete window['ai-summary-loading-' + sessionId];
+    const retryBtn = document.getElementById('ai-btn-' + sessionId);
+    if (retryBtn) {
+      retryBtn.disabled = false;
+      retryBtn.textContent = 'Retry';
+      retryBtn.style.opacity = '1';
+    }
+    alert('AI Summary failed: ' + e.message);
+  }
+}
+
+// ── Shared Helpers (used by config page) ────────────────
+
+function vscodeLink(filePath) {
+  if (!filePath) return '<span style="color:var(--text-dim);font-size:11px">(path unavailable)</span>';
+  const normalized = filePath.replace(/\\/g, '/');
+  return '<a href="vscode://file/' + encodeURI(normalized) + '" onclick="event.stopPropagation()" style="color:var(--accent);text-decoration:none;font-size:11px" title="Open in VS Code">' + esc(normalized) + '</a>';
+}
+
+function toggleSettingsSection(id) {
+  const el = document.getElementById(id);
+  const toggle = document.getElementById('toggle-' + id);
+  if (!el) return;
+  if (el.style.display === 'none') {
+    el.style.display = 'block';
+    if (toggle) toggle.textContent = '▼';
+  } else {
+    el.style.display = 'none';
+    if (toggle) toggle.textContent = '▶';
+  }
+}
+
+function renderMcpServerCard(name, config, scope) {
+  const typeIcon = config.type === 'stdio' ? 'STDIO' : config.type === 'sse' ? 'SSE' : (config.type || '?').toUpperCase();
+  const cmdLine = [config.command || '', ...(config.args || [])].join(' ');
+  const envEntries = config.env ? Object.entries(config.env) : [];
+
+  return `<div class="agent-card" style="border-color:var(--pink)33;flex-direction:column;align-items:stretch;gap:8px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="agent-icon" style="background:var(--pink)22;color:var(--pink);font-size:9px;width:40px">${typeIcon}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(name)}</div>
+        <div style="font-size:11px;color:var(--text-dim);font-family:monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(cmdLine)}">${esc(cmdLine)}</div>
+      </div>
+      <span style="font-size:10px;padding:2px 8px;border-radius:10px;background:var(--pink)11;color:var(--pink)">${scope}</span>
+    </div>
+    ${envEntries.length > 0 ? `
+    <div style="margin-left:50px">
+      <div style="font-size:10px;color:var(--text-faint);margin-bottom:3px;cursor:pointer" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">ENV (${envEntries.length} vars) — click to toggle</div>
+      <div style="display:none">
+        ${envEntries.map(([k, v]) => `<div style="font-size:10px;font-family:monospace"><span style="color:var(--cyan)">${esc(k)}</span>=<span style="color:var(--text-dim)">${esc(String(v))}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
+  </div>`;
+}
+
+function renderCron(s) {
+  const crons = s.cronJobs || [];
+
+  // Fetch global cron jobs (use cache if available, refresh in background)
+  const renderGlobal = (allCrons) => {
+    const el = document.getElementById('global-crons');
+    if (!el) return;
+    if (allCrons.length === 0) {
+      el.innerHTML = '<div style="color:var(--text-dim);font-size:12px">No cron jobs found across any session</div>';
+      return;
+    }
+    el.innerHTML = allCrons.map(c => `
+      <div class="agent-card">
+        <div class="agent-icon" style="background:var(--orange)22;color:var(--orange);font-size:11px">${esc(c.cron)}</div>
+        <div class="agent-info">
+          <div class="agent-name" style="font-size:11px">${esc(c.prompt?.slice(0, 100))}</div>
+          <div class="agent-type">
+            Session: ${esc(c.sessionTitle?.slice(0,30) || c.sessionId?.slice(0,8))}
+            · ${c.sessionAlive ? '<span style="color:var(--green)">alive</span>' : '<span style="color:var(--text-dim)">ended</span>'}
+            · ${c.recurring ? 'recurring' : 'one-shot'}
+            ${c.durable ? '· durable' : '· session-only'}
+            · created ${fmtTime(c.createdAt)}
+          </div>
+        </div>
+        <span class="agent-status ${c.sessionAlive ? 'running' : 'completed'}">${c.sessionAlive ? '● active' : '○ expired'}</span>
+      </div>
+    `).join('');
+  };
+
+  // Use cached data immediately, then refresh in background
+  if (globalCronsCache) {
+    setTimeout(() => renderGlobal(globalCronsCache), 0);
+  }
+  fetch('/api/cron-jobs').then(r => r.json()).then(allCrons => {
+    globalCronsCache = allCrons;
+    renderGlobal(allCrons);
+  });
+
+  return `
+    <div class="workflow-section">
+      <h3>Cron Jobs — This Session (${crons.length})</h3>
+      ${crons.length === 0 ? '<div style="color:var(--text-dim);font-size:12px;margin-bottom:16px">No cron jobs in this session</div>' : ''}
+      ${crons.map(c => `
+        <div class="agent-card">
+          <div class="agent-icon" style="background:var(--orange)22;color:var(--orange);font-size:11px">${esc(c.cron)}</div>
+          <div class="agent-info">
+            <div class="agent-name" style="font-size:11px">${esc(c.prompt?.slice(0, 120))}</div>
+            <div class="agent-type">${c.recurring?'recurring':'one-shot'} ${c.durable?'· durable':'· session-only'} · created ${fmtTime(c.createdAt)}</div>
+          </div>
+          <span class="agent-status running">active</span>
+        </div>
+      `).join('')}
+    </div>
+
+    <div class="workflow-section">
+      <h3>All Cron Jobs — Across All Sessions</h3>
+      <div id="global-crons">${globalCronsCache ? '' : '<div style="color:var(--text-dim);font-size:12px">Loading global cron jobs...</div>'}</div>
+    </div>
+
+    <div style="margin-top:20px;padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:6px">
+      <h3 style="font-size:13px;margin-bottom:8px">About Cron Jobs</h3>
+      <div style="font-size:12px;color:var(--text-dim);line-height:1.8">
+        <strong>Session-only</strong> cron jobs (like remote message polling) live in the Claude Code process memory and expire when the session ends.<br>
+        <strong>Durable</strong> cron jobs are saved to <code>~/.claude/scheduled_tasks.json</code> and survive restarts.<br>
+        <strong>Note:</strong> Cron jobs from ended sessions (session-only) are no longer running, even if shown here — they are historical records from the JSONL log.<br>
+        <strong>Why only 1 session polls?</strong> Each session creates its own session-only cron jobs on startup, but those die with the session. Only the <em>currently active</em> session's crons are running. Historical sessions' cron records here are just logs of what <em>was</em> scheduled.
+      </div>
+    </div>
+  `;
+}
+
+// Boot
+loadAgents();
+connectWS();
+fetch('/api/claude-cli-status').then(r=>r.json()).then(d => { window._claudeCliStatus = d; }).catch(()=>{});
+fetch('/api/sessions').then(r=>r.json()).then(data => {
+  sessions = data; refresh();
+  if (sessions.length > 0) {
+    const active = sessions.find(s => s.alive);
+    selectSession((active||sessions[0]).sessionId);
+  }
+});
+</script>
+</body>
+</html>

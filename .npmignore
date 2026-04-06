@@ -1,0 +1,8 @@
+coverage/
+__fixtures__/
+*.test.js
+server.pid
+server.log
+session-names.json
+.DS_Store
+Thumbs.db
