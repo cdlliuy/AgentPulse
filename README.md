@@ -5,9 +5,9 @@
     Monitor sessions, manage configurations, and track activity across Claude Code, GitHub Copilot, and more — all from one place.
   </p>
   <p align="center">
-    <a href="https://www.npmjs.com/package/agentpulse"><img src="https://img.shields.io/npm/v/agentpulse" alt="npm version"></a>
-    <a href="https://github.com/cdlliuy/AgentPulse/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/agentpulse" alt="license"></a>
-    <a href="https://www.npmjs.com/package/agentpulse"><img src="https://img.shields.io/npm/dt/agentpulse" alt="downloads"></a>
+    <a href="https://www.npmjs.com/package/agentdashpulse"><img src="https://img.shields.io/npm/v/agentdashpulse" alt="npm version"></a>
+    <a href="https://github.com/cdlliuy/AgentPulse/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/agentdashpulse" alt="license"></a>
+    <a href="https://www.npmjs.com/package/agentdashpulse"><img src="https://img.shields.io/npm/dt/agentdashpulse" alt="downloads"></a>
   </p>
 </p>
 
@@ -79,14 +79,14 @@ Developers who use AI coding agents (Claude Code, GitHub Copilot, etc.) daily an
 ### Install from npm
 
 ```bash
-npm install -g agentpulse
-agentpulse
+npm install -g agentdashpulse
+agentdashpulse
 ```
 
 Or run without installing:
 
 ```bash
-npx agentpulse
+npx agentdashpulse
 ```
 
 ### Install from source
@@ -101,13 +101,13 @@ npm start
 Open **http://localhost:3456** in your browser. Custom port:
 
 ```bash
-PORT=8080 agentpulse
+PORT=8080 agentdashpulse
 ```
 
 ### Run in background
 
 ```bash
-PORT=3456 nohup agentpulse > agentpulse.log 2>&1 & echo $! > agentpulse.pid
+PORT=3456 nohup agentdashpulse > agentdashpulse.log 2>&1 & echo $! > agentdashpulse.pid
 ```
 
 ## How It Works

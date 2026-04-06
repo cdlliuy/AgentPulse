@@ -1,5 +1,5 @@
 {
-  "name": "agentpulse",
+  "name": "agentdashpulse",
   "version": "1.0.0",
   "description": "AI Agent Management Dashboard — monitor and manage Claude Code, GitHub Copilot, and other AI agent sessions",
   "author": "Ying Liu",
@@ -19,7 +19,7 @@
     "management"
   ],
   "bin": {
-    "agentpulse": "server.js"
+    "agentdashpulse": "server.js"
   },
   "scripts": {
     "start": "node server.js",
