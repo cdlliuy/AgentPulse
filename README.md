@@ -26,34 +26,49 @@ AI coding agents are powerful, but managing them is chaotic:
 
 AgentPulse is a **local-first, zero-config dashboard** that automatically discovers and visualizes your AI agent ecosystem. No databases, no cloud services, no setup — just install and open.
 
+## Who Is This For?
+
+Developers who use AI coding agents (Claude Code, GitHub Copilot, etc.) daily and want a **single place** to monitor sessions, manage configurations, and review activity — instead of juggling scattered files, terminal windows, and config locations.
+
 ## Features
 
 ### Session Management
-- **Live monitoring** — real-time view of all active and historical sessions via WebSocket
-- **Multi-agent support** — Claude Code and GitHub Copilot side by side, with extensible agent architecture
-- **Session control** — rename, close, and organize sessions from one place
-- **Status at a glance** — active (green) vs. ended sessions, PID tracking, project grouping
+
+| Capability | Description |
+|-----------|-------------|
+| **Live monitoring** | Real-time view of all active and historical sessions via WebSocket |
+| **Multi-agent support** | Claude Code and GitHub Copilot side by side, with extensible agent architecture |
+| **Session control** | Rename, close, and organize sessions from one place |
+| **Status at a glance** | Active (green) vs. ended sessions, PID tracking, project grouping |
 
 ### AI-Powered Summaries
-- **One-click session summaries** — generate AI-powered analysis of any session via `claude -p`
-- **Brief naming** — auto-suggest meaningful session names from conversation content
-- **Persistent storage** — summaries survive server restarts, cached for fast access
-- **Session title editing** — modify titles of completed sessions directly in the JSONL log
+
+| Capability | Description |
+|-----------|-------------|
+| **One-click summaries** | Generate AI-powered analysis of any session via `claude -p` |
+| **Brief naming** | Auto-suggest meaningful session names from conversation content |
+| **Persistent storage** | Summaries survive server restarts, cached for fast access |
+| **Title editing** | Modify titles of completed sessions directly in the log |
 
 ### Configuration Center
-- **Global & project settings** — unified view of `settings.json`, `.claude.json`, and per-project overrides
-- **CLAUDE.md viewer/editor** — read and edit global instructions that guide agent behavior
-- **Memory management** — browse, edit, and delete memory files across all projects
-- **MCP server overview** — see all configured MCP servers with masked credentials
-- **Skills inventory** — slash commands and skills organized by scope (global vs. project)
+
+| Capability | Description |
+|-----------|-------------|
+| **Global & project settings** | Unified view of `settings.json`, `.claude.json`, and per-project overrides |
+| **CLAUDE.md editor** | Read and edit global instructions that guide agent behavior |
+| **Memory management** | Browse, edit, and delete memory files across all projects |
+| **MCP server overview** | See all configured MCP servers with masked credentials |
+| **Skills inventory** | Slash commands and skills organized by scope (global vs. project) |
 
 ### Activity & Event Log
-- **Curated Event Log** — filtered, deduplicated view of session events (oldest first)
-- **Full Timeline** — detailed visual workflow timeline (newest first)
-- **Smart deduplication** — consecutive identical events (e.g., polling crons) collapsed with count badges
-- **Flexible filtering** — filter by type: substantive, user-only, remote input, agents, or all
-- **Cron job tracking** — view active and historical cron jobs across all sessions
-- **Remote input detection** — automatic channel detection for Slack, Teams, WeChat, and other integrations
+
+| Capability | Description |
+|-----------|-------------|
+| **Curated Event Log** | Filtered, deduplicated view of session events (oldest first) |
+| **Full Timeline** | Detailed visual workflow timeline (newest first) |
+| **Smart deduplication** | Consecutive identical events collapsed with count badges |
+| **Flexible filtering** | Filter by type: substantive, user-only, remote input, agents, or all |
+| **Cron job tracking** | View active and historical cron jobs across all sessions |
 
 ## Quick Start
 
@@ -91,9 +106,11 @@ PORT=8080 agentpulse
 PORT=3456 nohup agentpulse > agentpulse.log 2>&1 & echo $! > agentpulse.pid
 ```
 
-## Zero Configuration
+## How It Works
 
-AgentPulse auto-discovers everything from standard locations:
+### Zero Configuration
+
+AgentPulse auto-discovers everything from standard locations — no config file needed:
 
 | Data | Source |
 |------|--------|
@@ -103,20 +120,19 @@ AgentPulse auto-discovers everything from standard locations:
 | Skills | `~/.claude/commands/` and `.claude/commands/` |
 | Copilot | `~/.copilot/` |
 
-## Architecture
+### Architecture
 
-AgentPulse follows a deliberately simple architecture:
+Deliberately simple — no build step, no framework, no database:
 
-- **Single `server.js`** — Express server with REST API + WebSocket, all business logic in one file
-- **Single `public/index.html`** — vanilla JS frontend, no framework, no build step
-- **No database** — reads directly from the agent session files on disk
-- **2 dependencies** — `express` and `ws`. That's it.
+| Component | What |
+|-----------|------|
+| `server.js` | Express server with REST API + WebSocket — all business logic in one file |
+| `public/index.html` | Vanilla JS frontend — no framework, no build step |
+| Dependencies | Just 2: `express` and `ws` |
 
-## API
+### API
 
-22 REST endpoints + WebSocket. Full reference in the source or at `/api/agents` for supported agent types.
-
-Key endpoints:
+22 REST endpoints + WebSocket for real-time updates:
 
 ```
 GET  /api/sessions          — list all sessions
@@ -128,12 +144,6 @@ GET  /api/memory            — memory files across projects
 GET  /api/projects          — all projects with configs
 WS   ws://localhost:3456    — real-time session updates (5s interval)
 ```
-
-## Who is this for?
-
-- **AI agent power users** — developers running multiple Claude Code or Copilot sessions daily
-- **Team leads** — who need visibility into AI-assisted development workflows
-- **DevOps / platform engineers** — managing AI agent configurations across projects
 
 ## Contributing
 
