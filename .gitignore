@@ -4,6 +4,5 @@ session-names.json
 *.log
 .DS_Store
 Thumbs.db
-scripts/
 demo-frames/
 screenshot-*.png
