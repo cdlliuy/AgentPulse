@@ -39,12 +39,12 @@ npm run demo       # Record demo GIF (requires running server + puppeteer + gif-
 - When adding new API endpoints or server logic, add corresponding tests in `server.test.js`
 - Test patterns: use Supertest for HTTP endpoints, mock `fs` and `child_process` for unit tests
 
-## UI Change Workflow
+## Mandatory Validation After Changes
 
-When making changes to `public/index.html` or any frontend-visible behavior:
+**Any change to `server.js` or `public/index.html` MUST be validated with both steps below before considering the task complete.** This applies to all changes — refactoring, bug fixes, new features, cleanup — not just UI-visible changes. Skipping this is not acceptable.
 
-1. **Run all unit tests**: `npm test`
-2. **Run dev-test visual validation** (default for all UI changes):
+1. **Run all unit tests**: `npm test` — all tests must pass
+2. **Run dev-test visual validation**:
    ```bash
    npm start &                     # ensure server is running
    npm install --no-save puppeteer # if not already installed
@@ -64,7 +64,7 @@ When making changes to `public/index.html` or any frontend-visible behavior:
    # Full options
    node scripts/take-screenshots.js --view detail --session <id> --port 3456
    ```
-3. **Provide screenshots to the user** so they can visually verify the UI changes without manually opening the browser. The dev-test captures:
+3. **Provide screenshots to the user** so they can visually verify. The dev-test captures:
    - `devtest-sessions.png` — Sessions list overview
    - `devtest-detail.png` — Session detail (Activity timeline)
    - `devtest-eventlog.png` — Session detail (Event Log table)

@@ -28,6 +28,54 @@ const WS_PUSH_INTERVAL_MS = 5000;
 const WS_MAX_SESSIONS = 30;
 const AI_SUMMARY_CACHE_TTL_MS = 600000; // 10 min
 
+// ── Truncation Limits ─────────────────────────────────
+const T = {
+  TIMELINE: 400,      // user/assistant/cron event text
+  REMOTE_INPUT: 500,  // remote input (chat platform messages)
+  BASH_CMD: 150,      // Bash command summary
+  URL: 100,           // WebFetch URL
+  CRON_PROMPT: 80,    // CronCreate prompt
+  TOOL_INPUT: 120,    // generic tool input summary
+  BRIEF_NAME: 80,     // AI summary brief name
+  DISPLAY_NAME: 60,   // session display name
+  SESSION_ID: 8,      // session ID prefix
+  HINT: 100,          // suggestSessionName hint
+  HINTS_COMBINED: 500, // suggestSessionName combined
+  DESC: 120,          // file/command descriptions
+  REPO_CLAUDE_MD: 2000, // repo CLAUDE.md preview
+  LONG_CONTENT: 3000, // copilot instructions etc.
+  STDERR: 200,        // error message preview
+};
+
+// ── Chat Platform Detection ───────────────────────────
+const CHAT_PLATFORM_KEYWORDS = {
+  feishu: ['feishu', '飞书', 'lark'],
+  teams: ['teams'],
+  wechat: ['wechat', '微信'],
+  slack: ['slack'],
+};
+
+function detectChatChannel(text) {
+  const lower = text.toLowerCase();
+  for (const [channel, keywords] of Object.entries(CHAT_PLATFORM_KEYWORDS)) {
+    if (keywords.some(k => lower.includes(k))) return channel;
+  }
+  return 'remote';
+}
+
+// ── Conversation Parsing Patterns ─────────────────────
+const MESSAGE_POLL_PATTERN = /(?:poll|check|fetch|read)\s+(?:for\s+)?(?:new\s+)?(?:\w+\s+)?(?:message|消息|指令)|feishu-poll|slack-poll|teams-poll|wechat-poll|消息轮询|轮询消息|检查.*消息|查看.*消息/i;
+const EMPTY_RESULT_PATTERNS = [
+  '(Bash completed with no output)',
+  'No new', 'no new', 'null', '""', "''", '{}', '[]'
+];
+
+// ── Agent Definitions ─────────────────────────────────
+const AGENT_DEFINITIONS = [
+  { id: 'claude-code', name: 'Claude Code', shortName: 'CC', icon: 'C', color: '#f78166', hasSettings: true },
+  { id: 'github-copilot', name: 'GitHub Copilot', shortName: 'GHC', icon: 'G', color: '#3fb950', hasSettings: true },
+];
+
 // ── Claude CLI Check ───────────────────────────────────
 let claudeCliStatus = { available: false, version: null, checkedAt: null };
 
@@ -63,7 +111,7 @@ function suggestSessionName(session) {
   const userEvents = (session.recentEvents || []).filter(e => e.type === 'user' && e.text);
   if (userEvents.length > 0) {
     // Take first few user messages as topic indicators
-    const firstMsgs = userEvents.slice(0, 3).map(e => e.text.slice(0, 100));
+    const firstMsgs = userEvents.slice(0, 3).map(e => e.text.slice(0, T.HINT));
     hints.push(...firstMsgs);
   }
 
@@ -87,11 +135,20 @@ function suggestSessionName(session) {
   }
 
   // Build a simple summary: take the most informative hint
-  const combined = hints.join(' | ').slice(0, 500);
+  const combined = hints.join(' | ').slice(0, T.HINTS_COMBINED);
   return combined || session.title || 'Unnamed session';
 }
 
 // ── Helpers ──────────────────────────────────────────────
+
+/** List files in a directory matching an extension, returning [] on error */
+function safeReadDir(dirPath, ext) {
+  try {
+    return fs.readdirSync(dirPath).filter(f => f.endsWith(ext));
+  } catch {
+    return [];
+  }
+}
 
 function isProcessRunning(pid) {
   try {
@@ -102,18 +159,25 @@ function isProcessRunning(pid) {
   }
 }
 
+/** Sort sessions: alive first, then by most recent activity */
+function sortByActivity(sessions) {
+  return sessions.sort((a, b) => {
+    if (a.alive !== b.alive) return (b.alive ? 1 : 0) - (a.alive ? 1 : 0);
+    const aTime = a.lastActivity ? new Date(a.lastActivity).getTime() : (a.startedAt || 0);
+    const bTime = b.lastActivity ? new Date(b.lastActivity).getTime() : (b.startedAt || 0);
+    return bTime - aTime;
+  });
+}
+
 /** Get sessions from session metadata files */
 function getSessionMetadata() {
   const map = new Map();
-  try {
-    const files = fs.readdirSync(SESSIONS_DIR).filter(f => f.endsWith('.json'));
-    for (const f of files) {
-      try {
-        const data = JSON.parse(fs.readFileSync(path.join(SESSIONS_DIR, f), 'utf8'));
-        if (data.sessionId) map.set(data.sessionId, data);
-      } catch {}
-    }
-  } catch {}
+  for (const f of safeReadDir(SESSIONS_DIR, '.json')) {
+    try {
+      const data = JSON.parse(fs.readFileSync(path.join(SESSIONS_DIR, f), 'utf8'));
+      if (data.sessionId) map.set(data.sessionId, data);
+    } catch {}
+  }
   return map;
 }
 
@@ -124,24 +188,201 @@ function discoverAllConversations() {
     const dirs = fs.readdirSync(PROJECTS_DIR);
     for (const dir of dirs) {
       const dirPath = path.join(PROJECTS_DIR, dir);
-      try {
-        const files = fs.readdirSync(dirPath).filter(f => f.endsWith('.jsonl'));
-        for (const f of files) {
-          const sessionId = f.replace('.jsonl', '');
-          const fullPath = path.join(dirPath, f);
-          const stat = fs.statSync(fullPath);
-          conversations.push({
-            sessionId,
-            project: dir,
-            path: fullPath,
-            size: stat.size,
-            lastModified: stat.mtimeMs
-          });
-        }
-      } catch {}
+      for (const f of safeReadDir(dirPath, '.jsonl')) {
+        const sessionId = f.replace('.jsonl', '');
+        const fullPath = path.join(dirPath, f);
+        const stat = fs.statSync(fullPath);
+        conversations.push({
+          sessionId,
+          project: dir,
+          path: fullPath,
+          size: stat.size,
+          lastModified: stat.mtimeMs
+        });
+      }
     }
   } catch {}
   return conversations.sort((a, b) => b.lastModified - a.lastModified);
+}
+
+/** Process a user-type message: track user text, skill expansion, remote input */
+function processUserMessage(obj, state) {
+  state.totalUserMessages++;
+  const contentArr = obj.message?.content || [];
+  const hasToolResults = contentArr.some(c => c.type === 'tool_result');
+  const textParts = contentArr
+    .filter(c => c.type === 'text')
+    .map(c => c.text)
+    .join(' ')
+    .replace(/<ide_[^>]*>[\s\S]*?<\/ide_[^>]*>/g, '')
+    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '')
+    .trim();
+
+  // Detect if this user message contains a Skill tool_result —
+  // the NEXT text-only user message will be the expanded skill prompt
+  for (const c of contentArr) {
+    if (c.type === 'tool_result' && state.skillToolUseIds.has(c.tool_use_id)) {
+      state.pendingSkillExpansion = true;
+      state.skillToolUseIds.delete(c.tool_use_id);
+    }
+  }
+
+  if (textParts) {
+    const isSkillPrompt = state.pendingSkillExpansion && !hasToolResults;
+    if (isSkillPrompt) state.pendingSkillExpansion = false;
+    state.timeline.push({
+      type: isSkillPrompt ? 'skill-prompt' : 'user',
+      timestamp: obj.timestamp,
+      text: textParts.slice(0, T.TIMELINE),
+      uuid: obj.uuid
+    });
+  }
+
+  // Check tool_result items for remote user input
+  for (const c of contentArr) {
+    if (c.type === 'tool_result' && state.messagePollIds.has(c.tool_use_id)) {
+      const text = typeof c.content === 'string' ? c.content :
+        Array.isArray(c.content) ? c.content.map(p => p.text || '').join(' ') : '';
+      const trimmed = text.trim();
+      const isEmpty = trimmed.length <= 5 ||
+        EMPTY_RESULT_PATTERNS.some(p => trimmed === p || trimmed.startsWith(p));
+      const isApiResponse = (trimmed.startsWith('{') && trimmed.includes('"ok"')) ||
+        (trimmed.startsWith('{') && trimmed.includes('"status"'));
+      if (!isEmpty && !isApiResponse) {
+        state.timeline.push({
+          type: 'remote-input',
+          channel: state.cronChannel,
+          timestamp: obj.timestamp,
+          text: text.slice(0, T.REMOTE_INPUT)
+        });
+      }
+      state.messagePollIds.delete(c.tool_use_id);
+    }
+  }
+}
+
+/** Process a queue-operation (cron trigger) */
+function processQueueOperation(obj, state) {
+  if (MESSAGE_POLL_PATTERN.test(obj.content)) {
+    state.inCronContext = true;
+    state.cronChannel = detectChatChannel(obj.content);
+  }
+  state.timeline.push({
+    type: 'cron-trigger',
+    timestamp: obj.timestamp,
+    text: obj.content.slice(0, T.TIMELINE)
+  });
+}
+
+/** Process an assistant-type message: track tool calls, agents, todos, crons, skills */
+function processAssistantMessage(obj, state) {
+  state.totalAssistantMessages++;
+  const msg = obj.message || {};
+  const contentArr = msg.content || [];
+
+  const toolUses = [];
+  let textContent = '';
+
+  for (const c of contentArr) {
+    if (c.type === 'tool_use') {
+      state.totalToolCalls++;
+      toolUses.push({ tool: c.name, id: c.id, input: summarizeInput(c.name, c.input) });
+
+      if (state.inCronContext && (c.name === 'Bash' || c.name.startsWith('mcp__'))) {
+        state.messagePollIds.add(c.id);
+        state.inCronContext = false;
+      }
+
+      if (c.name === 'Agent') {
+        state.agents.push({
+          id: c.id, description: c.input?.description || 'Sub-agent',
+          subagentType: c.input?.subagent_type || 'general-purpose',
+          runInBackground: c.input?.run_in_background || false,
+          spawnedAt: obj.timestamp, status: 'running'
+        });
+      }
+      if (c.name === 'TodoWrite' && c.input?.todos) {
+        state.todos.length = 0;
+        state.todos.push(...c.input.todos);
+      }
+      if (c.name === 'Skill') {
+        state.skillToolUseIds.add(c.id);
+        state.timeline.push({ type: 'skill', timestamp: obj.timestamp, skill: c.input?.skill || '?', args: c.input?.args || '' });
+      }
+      if (c.name === 'CronCreate') {
+        state.cronJobs.push({
+          toolUseId: c.id, cron: c.input?.cron || '', prompt: c.input?.prompt || '',
+          recurring: c.input?.recurring !== false, durable: c.input?.durable || false,
+          createdAt: obj.timestamp, status: 'active'
+        });
+      }
+      if (c.name === 'CronDelete' && c.input?.id) {
+        const job = state.cronJobs.find(j => j.jobId === c.input.id);
+        if (job) job.status = 'deleted';
+      }
+    }
+    if (c.type === 'text') textContent += c.text;
+  }
+
+  state.timeline.push({
+    type: 'assistant', timestamp: obj.timestamp,
+    text: textContent.trim().slice(0, T.TIMELINE),
+    tools: toolUses, model: msg.model, stopReason: msg.stop_reason
+  });
+}
+
+/** Process tool results: update agent status and capture cron job IDs */
+function processToolResults(obj, state) {
+  const results = obj.message?.content?.filter(c => c.type === 'tool_result') || [];
+  if (obj.type === 'tool_result' && obj.tool_use_id) {
+    const agent = state.agents.find(a => a.id === obj.tool_use_id);
+    if (agent) agent.status = 'completed';
+    const cron = state.cronJobs.find(j => j.toolUseId === obj.tool_use_id);
+    if (cron) {
+      const text = typeof obj.content === 'string' ? obj.content : JSON.stringify(obj.content || '');
+      const match = text.match(/([a-f0-9]{8})/);
+      if (match) cron.jobId = match[1];
+    }
+  }
+  for (const r of results) {
+    if (r.tool_use_id) {
+      const agent = state.agents.find(a => a.id === r.tool_use_id);
+      if (agent) agent.status = 'completed';
+      const cron = state.cronJobs.find(j => j.toolUseId === r.tool_use_id);
+      if (cron) {
+        const text = typeof r.content === 'string' ? r.content : JSON.stringify(r.content || '');
+        const match = text.match(/([a-f0-9]{8})/);
+        if (match) cron.jobId = match[1];
+      }
+    }
+  }
+}
+
+/** Classify timeline events with content quality flags for client-side filtering */
+function classifyTimelineEvents(timeline) {
+  return timeline.map(evt => {
+    if (evt.type === 'user') {
+      evt.hasContent = true;
+    } else if (evt.type === 'skill-prompt') {
+      evt.hasContent = false;
+      evt.isSkillPrompt = true;
+    } else if (evt.type === 'remote-input') {
+      evt.hasContent = true;
+    } else if (evt.type === 'cron-trigger') {
+      evt.hasContent = false;
+      evt.isCron = true;
+    } else if (evt.type === 'assistant') {
+      const hasText = evt.text && evt.text.trim().length > 10;
+      const hasAgent = (evt.tools || []).some(t => t.tool === 'Agent');
+      const hasSkill = (evt.tools || []).some(t => t.tool === 'Skill');
+      evt.hasContent = hasText || hasAgent || hasSkill;
+      evt.isToolOnly = !hasText && (evt.tools || []).length > 0;
+      evt.hasAgent = hasAgent;
+    } else if (evt.type === 'skill') {
+      evt.hasContent = true;
+    }
+    return evt;
+  });
 }
 
 /** Full parse of a JSONL conversation file — extracts agents, todos, events */
@@ -151,283 +392,52 @@ function parseConversation(jsonlPath, recentLineCount = 200) {
     const lines = content.trim().split('\n');
 
     let title = null;
-    let totalUserMessages = 0;
-    let totalAssistantMessages = 0;
-    let totalToolCalls = 0;
-    let lastActivity = null;
     let firstTimestamp = null;
+    let lastActivity = null;
 
-    // Agent workflow tracking
-    const agents = []; // { id, description, type, status, spawnedAt, parentId }
-    const todos = []; // latest todo state
-    const cronJobs = []; // { id, cron, prompt, recurring, createdAt }
-    const timeline = []; // ordered events for workflow view
-    const messagePollIds = new Set(); // track tool calls that poll for external user messages
-    let inCronContext = false; // true after a cron enqueue, false after first tool call is tracked
-    let cronChannel = 'remote'; // detected channel from cron prompt
-    let pendingSkillExpansion = false; // true after Skill tool_result, next user text is expanded prompt
-    const skillToolUseIds = new Set(); // track Skill tool_use IDs to detect their results
-    // Detect crons that poll for incoming user messages from chat platforms
-    // Must match message-receiving patterns, not just crons that mention messaging platforms
-    const MESSAGE_POLL_PATTERN = /(?:poll|check|fetch|read)\s+(?:for\s+)?(?:new\s+)?(?:\w+\s+)?(?:message|消息|指令)|feishu-poll|slack-poll|teams-poll|wechat-poll|消息轮询|轮询消息|检查.*消息|查看.*消息/i;
-    const EMPTY_RESULT_PATTERNS = [
-      '(Bash completed with no output)',
-      'No new', 'no new', 'null', '""', "''", '{}', '[]'
-    ];
+    const state = {
+      totalUserMessages: 0, totalAssistantMessages: 0, totalToolCalls: 0,
+      agents: [], todos: [], cronJobs: [], timeline: [],
+      messagePollIds: new Set(), skillToolUseIds: new Set(),
+      inCronContext: false, cronChannel: 'remote', pendingSkillExpansion: false,
+    };
 
-    // Scan ALL lines for stats, agents, todos
     for (const line of lines) {
       try {
         const obj = JSON.parse(line);
         if (obj.type === 'ai-title') title = obj.aiTitle;
-
         if (obj.timestamp && !firstTimestamp) firstTimestamp = obj.timestamp;
         if (obj.timestamp) lastActivity = obj.timestamp;
 
         if (obj.type === 'user') {
-          totalUserMessages++;
-          const contentArr = obj.message?.content || [];
-          const hasToolResults = contentArr.some(c => c.type === 'tool_result');
-          const textParts = contentArr
-            .filter(c => c.type === 'text')
-            .map(c => c.text)
-            .join(' ')
-            .replace(/<ide_[^>]*>[\s\S]*?<\/ide_[^>]*>/g, '')
-            .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '')
-            .trim();
-
-          // Detect if this user message contains a Skill tool_result —
-          // the NEXT text-only user message will be the expanded skill prompt
-          for (const c of contentArr) {
-            if (c.type === 'tool_result' && skillToolUseIds.has(c.tool_use_id)) {
-              pendingSkillExpansion = true;
-              skillToolUseIds.delete(c.tool_use_id);
-            }
-          }
-
-          if (textParts) {
-            // If this is a text-only message right after a Skill tool_result,
-            // it's the expanded skill prompt, not real user input
-            const isSkillPrompt = pendingSkillExpansion && !hasToolResults;
-            if (isSkillPrompt) pendingSkillExpansion = false;
-
-            timeline.push({
-              type: isSkillPrompt ? 'skill-prompt' : 'user',
-              timestamp: obj.timestamp,
-              text: textParts.slice(0, 400),
-              uuid: obj.uuid
-            });
-          }
-
-          // Check tool_result items for remote user input (Teams/Slack/WeChat/Feishu/MCP etc.)
-          for (const c of contentArr) {
-            if (c.type === 'tool_result' && messagePollIds.has(c.tool_use_id)) {
-              const text = typeof c.content === 'string' ? c.content :
-                Array.isArray(c.content) ? c.content.map(p => p.text || '').join(' ') : '';
-              const trimmed = text.trim();
-              // Skip empty/trivial results
-              const isEmpty = trimmed.length <= 5 ||
-                EMPTY_RESULT_PATTERNS.some(p => trimmed === p || trimmed.startsWith(p));
-              // Also skip JSON API responses (outbound message confirmations)
-              const isApiResponse = (trimmed.startsWith('{') && trimmed.includes('"ok"')) ||
-                (trimmed.startsWith('{') && trimmed.includes('"status"'));
-              if (!isEmpty && !isApiResponse) {
-                timeline.push({
-                  type: 'remote-input',
-                  channel: cronChannel,
-                  timestamp: obj.timestamp,
-                  text: text.slice(0, 500)
-                });
-              }
-              // Clear cron context after processing result
-              messagePollIds.delete(c.tool_use_id);
-            }
-          }
+          processUserMessage(obj, state);
+        } else if (obj.type === 'assistant') {
+          processAssistantMessage(obj, state);
         }
 
-        // Track queue-operation (cron triggers) — these contain the actual cron prompt
-        // Skip <task-notification> entries — those are background agent completion notices, not cron triggers
         if (obj.type === 'queue-operation' && obj.operation === 'enqueue' && obj.content
             && !obj.content.trimStart().startsWith('<task-notification>')) {
-          // Detect if this cron is polling for incoming messages from a chat platform
-          if (MESSAGE_POLL_PATTERN.test(obj.content)) {
-            inCronContext = true;
-            // Detect channel
-            const prompt = obj.content.toLowerCase();
-            if (prompt.includes('feishu') || prompt.includes('飞书') || prompt.includes('lark')) cronChannel = 'feishu';
-            else if (prompt.includes('teams')) cronChannel = 'teams';
-            else if (prompt.includes('wechat') || prompt.includes('微信')) cronChannel = 'wechat';
-            else if (prompt.includes('slack')) cronChannel = 'slack';
-            else cronChannel = 'remote';
-          }
-          timeline.push({
-            type: 'cron-trigger',
-            timestamp: obj.timestamp,
-            text: obj.content.slice(0, 400)
-          });
+          processQueueOperation(obj, state);
         }
 
-        if (obj.type === 'assistant') {
-          totalAssistantMessages++;
-          const msg = obj.message || {};
-          const contentArr = msg.content || [];
-
-          const toolUses = [];
-          let textContent = '';
-
-          for (const c of contentArr) {
-            if (c.type === 'tool_use') {
-              totalToolCalls++;
-              const toolInfo = {
-                tool: c.name,
-                id: c.id,
-                input: summarizeInput(c.name, c.input)
-              };
-              toolUses.push(toolInfo);
-
-              // Track the FIRST Bash/MCP tool call within a message-polling cron context
-              // Only the first call is the actual poll; subsequent calls are execution of the result
-              if (inCronContext) {
-                if (c.name === 'Bash' || c.name.startsWith('mcp__')) {
-                  messagePollIds.add(c.id);
-                  inCronContext = false; // only track the first tool call
-                }
-              }
-
-              // Track Agent spawns
-              if (c.name === 'Agent') {
-                agents.push({
-                  id: c.id,
-                  description: c.input?.description || 'Sub-agent',
-                  subagentType: c.input?.subagent_type || 'general-purpose',
-                  runInBackground: c.input?.run_in_background || false,
-                  spawnedAt: obj.timestamp,
-                  status: 'running' // will be updated when result comes
-                });
-              }
-
-              // Track TodoWrite
-              if (c.name === 'TodoWrite' && c.input?.todos) {
-                todos.length = 0;
-                todos.push(...c.input.todos);
-              }
-
-              // Track Skill invocations
-              if (c.name === 'Skill') {
-                skillToolUseIds.add(c.id);
-                timeline.push({
-                  type: 'skill',
-                  timestamp: obj.timestamp,
-                  skill: c.input?.skill || '?',
-                  args: c.input?.args || ''
-                });
-              }
-
-              // Track CronCreate
-              if (c.name === 'CronCreate') {
-                cronJobs.push({
-                  toolUseId: c.id,
-                  cron: c.input?.cron || '',
-                  prompt: c.input?.prompt || '',
-                  recurring: c.input?.recurring !== false,
-                  durable: c.input?.durable || false,
-                  createdAt: obj.timestamp,
-                  status: 'active'
-                });
-              }
-
-              // Track CronDelete — mark matching cron as deleted
-              if (c.name === 'CronDelete' && c.input?.id) {
-                const job = cronJobs.find(j => j.jobId === c.input.id);
-                if (job) job.status = 'deleted';
-              }
-            }
-            if (c.type === 'text') {
-              textContent += c.text;
-            }
-          }
-
-          timeline.push({
-            type: 'assistant',
-            timestamp: obj.timestamp,
-            text: textContent.trim().slice(0, 400),
-            tools: toolUses,
-            model: msg.model,
-            stopReason: msg.stop_reason
-          });
-        }
-
-        // Track tool results for agent completion + cron job IDs
         if (obj.type === 'tool_result' || (obj.message?.content || []).some(c => c.type === 'tool_result')) {
-          const results = obj.message?.content?.filter(c => c.type === 'tool_result') || [];
-          if (obj.type === 'tool_result' && obj.tool_use_id) {
-            const agent = agents.find(a => a.id === obj.tool_use_id);
-            if (agent) agent.status = 'completed';
-            // Capture cron job ID from result
-            const cron = cronJobs.find(j => j.toolUseId === obj.tool_use_id);
-            if (cron) {
-              const text = typeof obj.content === 'string' ? obj.content : JSON.stringify(obj.content || '');
-              const match = text.match(/([a-f0-9]{8})/);
-              if (match) cron.jobId = match[1];
-            }
-          }
-          for (const r of results) {
-            if (r.tool_use_id) {
-              const agent = agents.find(a => a.id === r.tool_use_id);
-              if (agent) agent.status = 'completed';
-              const cron = cronJobs.find(j => j.toolUseId === r.tool_use_id);
-              if (cron) {
-                const text = typeof r.content === 'string' ? r.content : JSON.stringify(r.content || '');
-                const match = text.match(/([a-f0-9]{8})/);
-                if (match) cron.jobId = match[1];
-              }
-            }
-          }
+          processToolResults(obj, state);
         }
       } catch {}
     }
 
-    // All events are now captured from the full timeline scan above
-
-    // Use the full timeline instead of just tail-based recentEvents
-    // Keep user messages and substantive assistant messages (with text or agents)
-    const allEvents = timeline.map(evt => {
-      // Mark events with content quality for client-side filtering
-      if (evt.type === 'user') {
-        evt.hasContent = true;
-      } else if (evt.type === 'skill-prompt') {
-        evt.hasContent = false; // expanded skill prompts are system content, hide by default
-        evt.isSkillPrompt = true;
-      } else if (evt.type === 'remote-input') {
-        evt.hasContent = true;
-      } else if (evt.type === 'cron-trigger') {
-        evt.hasContent = false; // cron prompts are repetitive, hide by default
-        evt.isCron = true;
-      } else if (evt.type === 'assistant') {
-        const hasText = evt.text && evt.text.trim().length > 10;
-        const hasAgent = (evt.tools || []).some(t => t.tool === 'Agent');
-        const hasSkill = (evt.tools || []).some(t => t.tool === 'Skill');
-        evt.hasContent = hasText || hasAgent || hasSkill;
-        evt.isToolOnly = !hasText && (evt.tools || []).length > 0;
-        evt.hasAgent = hasAgent;
-      } else if (evt.type === 'skill') {
-        evt.hasContent = true;
-      }
-      return evt;
-    });
-
     return {
       title,
-      totalUserMessages,
-      totalAssistantMessages,
-      totalToolCalls,
+      totalUserMessages: state.totalUserMessages,
+      totalAssistantMessages: state.totalAssistantMessages,
+      totalToolCalls: state.totalToolCalls,
       firstTimestamp,
       lastActivity,
-      agents,
-      todos,
-      cronJobs: cronJobs.filter(j => j.status === 'active'),
-      recentEvents: allEvents,
-      timelineLength: timeline.length
+      agents: state.agents,
+      todos: state.todos,
+      cronJobs: state.cronJobs.filter(j => j.status === 'active'),
+      recentEvents: classifyTimelineEvents(state.timeline),
+      timelineLength: state.timeline.length
     };
   } catch {
     return {
@@ -440,19 +450,19 @@ function parseConversation(jsonlPath, recentLineCount = 200) {
 function summarizeInput(toolName, input) {
   if (!input) return '';
   switch (toolName) {
-    case 'Bash': return input.command?.slice(0, 150) || '';
+    case 'Bash': return input.command?.slice(0, T.BASH_CMD) || '';
     case 'Read': return input.file_path || '';
     case 'Write': return input.file_path || '';
     case 'Edit': return input.file_path || '';
     case 'Grep': return `${input.pattern || ''} in ${input.path || '.'}`;
     case 'Glob': return input.pattern || '';
     case 'Agent': return `[${input.subagent_type || 'general'}] ${input.description || ''}`;
-    case 'WebFetch': return input.url?.slice(0, 100) || '';
+    case 'WebFetch': return input.url?.slice(0, T.URL) || '';
     case 'WebSearch': return input.query || '';
     case 'TodoWrite': return `${(input.todos || []).length} items`;
     case 'Skill': return input.skill || '';
-    case 'CronCreate': return input.prompt?.slice(0, 80) || '';
-    default: return JSON.stringify(input).slice(0, 120);
+    case 'CronCreate': return input.prompt?.slice(0, T.CRON_PROMPT) || '';
+    default: return JSON.stringify(input).slice(0, T.TOOL_INPUT);
   }
 }
 
@@ -532,12 +542,7 @@ function buildSessionList(includeHistorical = true) {
   }
 
   // Sort: alive first, then by last activity desc
-  results.sort((a, b) => {
-    if (a.alive !== b.alive) return b.alive - a.alive;
-    const aTime = a.lastActivity ? new Date(a.lastActivity).getTime() : (a.startedAt || 0);
-    const bTime = b.lastActivity ? new Date(b.lastActivity).getTime() : (b.startedAt || 0);
-    return bTime - aTime;
-  });
+  sortByActivity(results);
 
   // Merge custom session names + generate suggestions + attach AI summaries
   const names = loadSessionNames();
@@ -548,7 +553,7 @@ function buildSessionList(includeHistorical = true) {
     if (cachedSummary) {
       s.aiSummary = cachedSummary;
     }
-    s.displayName = s.customName || cachedSummary?.briefName || s.title || s.sessionId.slice(0, 8);
+    s.displayName = s.customName || cachedSummary?.briefName || s.title || s.sessionId.slice(0, T.SESSION_ID);
     s.suggestedName = suggestSessionName(s);
   }
 
@@ -737,20 +742,17 @@ function displayNameFromSlug(slug) {
 /** Read Copilot custom agents from ~/.copilot/agents/ */
 function readCopilotAgents() {
   const agents = [];
-  try {
-    const files = fs.readdirSync(COPILOT_AGENTS_DIR).filter(f => f.endsWith('.md'));
-    for (const f of files) {
-      const content = readTextFile(path.join(COPILOT_AGENTS_DIR, f));
-      if (!content) continue;
-      const { meta } = parseFrontmatter(content);
-      agents.push({
-        name: meta.name || f.replace('.md', ''),
-        file: f,
-        description: meta.description || '',
-        path: path.join(COPILOT_AGENTS_DIR, f)
-      });
-    }
-  } catch {}
+  for (const f of safeReadDir(COPILOT_AGENTS_DIR, '.md')) {
+    const content = readTextFile(path.join(COPILOT_AGENTS_DIR, f));
+    if (!content) continue;
+    const { meta } = parseFrontmatter(content);
+    agents.push({
+      name: meta.name || f.replace('.md', ''),
+      file: f,
+      description: meta.description || '',
+      path: path.join(COPILOT_AGENTS_DIR, f)
+    });
+  }
   return agents;
 }
 
@@ -850,11 +852,9 @@ app.get('/api/projects', (req, res) => {
     let memoryCount = 0;
     let memories = [];
     if (fs.existsSync(memDir)) {
-      try {
-        const files = fs.readdirSync(memDir).filter(f => f.endsWith('.md'));
-        memoryCount = files.filter(f => f !== 'MEMORY.md').length;
-        memories = files.map(f => parseMemoryFile(path.join(memDir, f), proj.slug)).filter(Boolean);
-      } catch {}
+      const files = safeReadDir(memDir, '.md');
+      memoryCount = files.filter(f => f !== 'MEMORY.md').length;
+      memories = files.map(f => parseMemoryFile(path.join(memDir, f), proj.slug)).filter(Boolean);
     }
 
     // MCP from project settings
@@ -997,7 +997,7 @@ app.get('/api/settings', (req, res) => {
     repo: {
       settings: repoSettings,
       settingsPath: repoClaudeDir ? path.join(repoClaudeDir, 'settings.local.json') : null,
-      claudeMd: repoClaudeMd ? repoClaudeMd.slice(0, 2000) + (repoClaudeMd.length > 2000 ? '\n... (truncated)' : '') : null,
+      claudeMd: repoClaudeMd ? repoClaudeMd.slice(0, T.REPO_CLAUDE_MD) + (repoClaudeMd.length > T.REPO_CLAUDE_MD ? '\n... (truncated)' : '') : null,
       claudeMdPath: repoClaudeDir ? path.join(repoClaudeDir, 'CLAUDE.md') : null,
       claudeMdLines: repoClaudeMd ? repoClaudeMd.split('\n').length : 0,
       mcpServers: maskMcpEnv(repoMcpServers)
@@ -1019,13 +1019,10 @@ app.get('/api/memory', (req, res) => {
     const memDir = path.join(proj.path, 'memory');
     if (!fs.existsSync(memDir)) continue;
 
-    try {
-      const files = fs.readdirSync(memDir).filter(f => f.endsWith('.md'));
-      for (const f of files) {
-        const parsed = parseMemoryFile(path.join(memDir, f), proj.slug);
-        if (parsed) allMemory.push(parsed);
-      }
-    } catch {}
+    for (const f of safeReadDir(memDir, '.md')) {
+      const parsed = parseMemoryFile(path.join(memDir, f), proj.slug);
+      if (parsed) allMemory.push(parsed);
+    }
   }
 
   res.json(allMemory);
@@ -1190,7 +1187,7 @@ ${contextText}`;
     child.on('close', (code) => {
       if (code !== 0) {
         console.error('[AI Summary] claude -p exited with code', code, stderr);
-        return res.status(500).json({ error: 'claude -p failed (exit ' + code + '): ' + stderr.slice(0, 200) });
+        return res.status(500).json({ error: 'claude -p failed (exit ' + code + '): ' + stderr.slice(0, T.STDERR) });
       }
 
       const output = stdout.trim();
@@ -1201,7 +1198,7 @@ ${contextText}`;
       const briefMatch = output.match(/##\s*Brief\s*Name\s*\n([\s\S]*?)(?=##\s*Summary|$)/i);
       const summaryMatch = output.match(/##\s*Summary\s*\n([\s\S]*?)(?=##\s*Lessons|$)/i);
       const lessonsMatch = output.match(/##\s*Lessons?\s*Learned?([\s\S]*?)$/i);
-      if (briefMatch) briefName = briefMatch[1].trim().replace(/^["']|["']$/g, '').slice(0, 80);
+      if (briefMatch) briefName = briefMatch[1].trim().replace(/^["']|["']$/g, '').slice(0, T.BRIEF_NAME);
       if (summaryMatch) summary = summaryMatch[1].trim();
       if (lessonsMatch) lessons = lessonsMatch[1].trim();
 
@@ -1298,22 +1295,19 @@ const COPILOT_BUILTIN_PARTICIPANTS = [
 /** Read skill/command .md files from a directory */
 function readCommandFiles(dirPath) {
   const commands = [];
-  try {
-    const files = fs.readdirSync(dirPath).filter(f => f.endsWith('.md'));
-    for (const f of files) {
-      const content = readTextFile(path.join(dirPath, f));
-      if (!content) continue;
-      const name = f.replace(/\.md$/, '').replace(/\.prompt$/, '');
-      const { meta } = parseFrontmatter(content);
-      let description = meta.description || '';
-      // If no frontmatter description, use first non-empty line as description
-      if (!description) {
-        const firstLine = content.split('\n').find(l => l.trim() && !l.startsWith('---') && !l.startsWith('#'));
-        if (firstLine) description = firstLine.trim().slice(0, 120);
-      }
-      commands.push({ name: '/' + name, file: f, description, path: path.join(dirPath, f) });
+  for (const f of safeReadDir(dirPath, '.md')) {
+    const content = readTextFile(path.join(dirPath, f));
+    if (!content) continue;
+    const name = f.replace(/\.md$/, '').replace(/\.prompt$/, '');
+    const { meta } = parseFrontmatter(content);
+    let description = meta.description || '';
+    // If no frontmatter description, use first non-empty line as description
+    if (!description) {
+      const firstLine = content.split('\n').find(l => l.trim() && !l.startsWith('---') && !l.startsWith('#'));
+      if (firstLine) description = firstLine.trim().slice(0, T.DESC);
     }
-  } catch {}
+    commands.push({ name: '/' + name, file: f, description, path: path.join(dirPath, f) });
+  }
   return commands;
 }
 
@@ -1343,19 +1337,9 @@ function slugToPath(slug) {
 
 /** Discover all project working directories from project slugs */
 function discoverProjectWorkDirs() {
-  const dirs = [];
-  try {
-    const slugs = fs.readdirSync(PROJECTS_DIR).filter(s => {
-      return fs.statSync(path.join(PROJECTS_DIR, s)).isDirectory();
-    });
-    for (const slug of slugs) {
-      const candidate = slugToPath(slug);
-      if (candidate && fs.existsSync(candidate)) {
-        dirs.push({ slug, workDir: candidate });
-      }
-    }
-  } catch {}
-  return dirs;
+  return discoverProjects()
+    .map(p => ({ slug: p.slug, workDir: slugToPath(p.slug) }))
+    .filter(p => p.workDir && fs.existsSync(p.workDir));
 }
 
 // GET /api/claude-code/skills — Claude Code slash commands & skills by scope
@@ -1387,18 +1371,15 @@ app.get('/api/copilot/skills', (req, res) => {
   for (const { slug, workDir } of discoverProjectWorkDirs()) {
     const promptsDir = path.join(workDir, '.github', 'prompts');
     const prompts = [];
-    try {
-      const files = fs.readdirSync(promptsDir).filter(f => f.endsWith('.prompt.md'));
-      for (const f of files) {
-        const content = readTextFile(path.join(promptsDir, f));
-        let description = '';
-        if (content) {
-          const firstLine = content.split('\n').find(l => l.trim() && !l.startsWith('---') && !l.startsWith('#'));
-          if (firstLine) description = firstLine.trim().slice(0, 120);
-        }
-        prompts.push({ name: '#' + f.replace('.prompt.md', ''), file: f, description, path: path.join(promptsDir, f) });
+    for (const f of safeReadDir(promptsDir, '.prompt.md')) {
+      const content = readTextFile(path.join(promptsDir, f));
+      let description = '';
+      if (content) {
+        const firstLine = content.split('\n').find(l => l.trim() && !l.startsWith('---') && !l.startsWith('#'));
+        if (firstLine) description = firstLine.trim().slice(0, T.DESC);
       }
-    } catch {}
+      prompts.push({ name: '#' + f.replace('.prompt.md', ''), file: f, description, path: path.join(promptsDir, f) });
+    }
     if (prompts.length > 0) {
       projectPrompts.push({ project: displayNameFromSlug(slug), dir: promptsDir, commands: prompts });
     }
@@ -1447,7 +1428,7 @@ function parseCopilotSession(jsonlPath) {
             timeline.push({
               type: 'user',
               timestamp: obj.timestamp,
-              text: (obj.data?.content || '').slice(0, 400)
+              text: (obj.data?.content || '').slice(0, T.TIMELINE)
             });
             break;
           case 'assistant.message':
@@ -1455,7 +1436,7 @@ function parseCopilotSession(jsonlPath) {
             timeline.push({
               type: 'assistant',
               timestamp: obj.timestamp,
-              text: (obj.data?.content || '').slice(0, 400),
+              text: (obj.data?.content || '').slice(0, T.TIMELINE),
               hasContent: (obj.data?.content || '').trim().length > 10
             });
             break;
@@ -1465,7 +1446,7 @@ function parseCopilotSession(jsonlPath) {
               type: 'assistant',
               timestamp: obj.timestamp,
               text: '',
-              tools: [{ tool: obj.data?.toolName || '?', input: JSON.stringify(obj.data?.arguments || {}).slice(0, 120) }],
+              tools: [{ tool: obj.data?.toolName || '?', input: JSON.stringify(obj.data?.arguments || {}).slice(0, T.TOOL_INPUT) }],
               isToolOnly: true
             });
             break;
@@ -1491,36 +1472,29 @@ function parseCopilotSession(jsonlPath) {
 /** Build list of all Copilot agent-mode sessions */
 function buildCopilotSessionList() {
   const results = [];
-  try {
-    const files = fs.readdirSync(COPILOT_SESSION_STATE_DIR).filter(f => f.endsWith('.jsonl'));
-    for (const f of files) {
-      const fullPath = path.join(COPILOT_SESSION_STATE_DIR, f);
-      const stat = fs.statSync(fullPath);
-      const parsed = parseCopilotSession(fullPath);
-      if (!parsed) continue;
+  for (const f of safeReadDir(COPILOT_SESSION_STATE_DIR, '.jsonl')) {
+    const fullPath = path.join(COPILOT_SESSION_STATE_DIR, f);
+    const stat = fs.statSync(fullPath);
+    const parsed = parseCopilotSession(fullPath);
+    if (!parsed) continue;
 
-      results.push({
-        sessionId: parsed.sessionId,
-        alive: false, // Copilot agent sessions don't have persistent PIDs we can check
-        entrypoint: 'copilot-agent',
-        startedAt: parsed.startTime ? new Date(parsed.startTime).getTime() : stat.mtimeMs,
-        model: parsed.model,
-        fileSizeKB: Math.round(stat.size / 1024),
-        totalUserMessages: parsed.totalUserMessages,
-        totalAssistantMessages: parsed.totalAssistantMessages,
-        totalToolCalls: parsed.totalToolCalls,
-        lastActivity: parsed.lastActivity,
-        recentEvents: parsed.recentEvents,
-        displayName: parsed.recentEvents.find(e => e.type === 'user')?.text?.slice(0, 60) || parsed.sessionId.slice(0, 8)
-      });
-    }
-  } catch {}
+    results.push({
+      sessionId: parsed.sessionId,
+      alive: false, // Copilot agent sessions don't have persistent PIDs we can check
+      entrypoint: 'copilot-agent',
+      startedAt: parsed.startTime ? new Date(parsed.startTime).getTime() : stat.mtimeMs,
+      model: parsed.model,
+      fileSizeKB: Math.round(stat.size / 1024),
+      totalUserMessages: parsed.totalUserMessages,
+      totalAssistantMessages: parsed.totalAssistantMessages,
+      totalToolCalls: parsed.totalToolCalls,
+      lastActivity: parsed.lastActivity,
+      recentEvents: parsed.recentEvents,
+      displayName: parsed.recentEvents.find(e => e.type === 'user')?.text?.slice(0, T.DISPLAY_NAME) || parsed.sessionId.slice(0, T.SESSION_ID)
+    });
+  }
 
-  results.sort((a, b) => {
-    const aTime = a.lastActivity ? new Date(a.lastActivity).getTime() : (a.startedAt || 0);
-    const bTime = b.lastActivity ? new Date(b.lastActivity).getTime() : (b.startedAt || 0);
-    return bTime - aTime;
-  });
+  sortByActivity(results);
   return results;
 }
 
@@ -1545,7 +1519,7 @@ function buildCopilotSettings() {
       if (content) {
         projectInstructions.push({
           project: displayNameFromSlug(slug),
-          content: content.slice(0, 3000) + (content.length > 3000 ? '\n... (truncated)' : ''),
+          content: content.slice(0, T.LONG_CONTENT) + (content.length > T.LONG_CONTENT ? '\n... (truncated)' : ''),
           path: p,
           lines: content.split('\n').length
         });
@@ -1559,13 +1533,11 @@ function buildCopilotSettings() {
   const promptsDirs = [];
   for (const { slug, workDir } of discoverProjectWorkDirs()) {
     const promptsDir = path.join(workDir, '.github', 'prompts');
-    try {
-      const files = fs.readdirSync(promptsDir).filter(f => f.endsWith('.prompt.md'));
-      for (const f of files) {
-        prompts.push({ file: f, name: f.replace('.prompt.md', ''), path: path.join(promptsDir, f), project: displayNameFromSlug(slug) });
-      }
-      if (files.length > 0) promptsDirs.push(promptsDir);
-    } catch {}
+    const files = safeReadDir(promptsDir, '.prompt.md');
+    for (const f of files) {
+      prompts.push({ file: f, name: f.replace('.prompt.md', ''), path: path.join(promptsDir, f), project: displayNameFromSlug(slug) });
+    }
+    if (files.length > 0) promptsDirs.push(promptsDir);
   }
 
   return {
@@ -1596,28 +1568,16 @@ app.get('/api/agents', (req, res) => {
   const claudeSessions = buildSessionList(true);
   const copilotSessions = buildCopilotSessionList();
 
-  res.json([
-    {
-      id: 'claude-code',
-      name: 'Claude Code',
-      shortName: 'CC',
-      icon: 'C',
-      color: '#f78166',
-      activeSessions: claudeSessions.filter(s => s.alive).length,
-      totalSessions: claudeSessions.length,
-      hasSettings: true
-    },
-    {
-      id: 'github-copilot',
-      name: 'GitHub Copilot',
-      shortName: 'GHC',
-      icon: 'G',
-      color: '#3fb950',
-      activeSessions: 0, // Copilot agent sessions don't expose PID
-      totalSessions: copilotSessions.length,
-      hasSettings: true
-    }
-  ]);
+  const sessionCounts = {
+    'claude-code': { active: claudeSessions.filter(s => s.alive).length, total: claudeSessions.length },
+    'github-copilot': { active: 0, total: copilotSessions.length },
+  };
+
+  res.json(AGENT_DEFINITIONS.map(def => ({
+    ...def,
+    activeSessions: sessionCounts[def.id]?.active || 0,
+    totalSessions: sessionCounts[def.id]?.total || 0,
+  })));
 });
 
 // Start server only when run directly (not when imported by tests)
