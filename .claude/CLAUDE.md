@@ -17,6 +17,9 @@ AgentPulse is a local-first, zero-config dashboard for monitoring AI coding agen
 npm start          # Start server (default port 3456)
 npm test           # Run all tests (must pass before committing)
 npm run dev        # Dev server
+npm run dev-test   # Capture all dashboard screenshots for visual validation
+npm run dev-test:eventlog  # Capture Event Log view only
+npm run dev-test:detail    # Capture Session Detail (Activity) view only
 npm run screenshots  # Capture 4 masked screenshots (requires running server + puppeteer)
 npm run demo       # Record demo GIF (requires running server + puppeteer + gif-encoder-2 + pngjs)
 ```
@@ -41,18 +44,33 @@ npm run demo       # Record demo GIF (requires running server + puppeteer + gif-
 When making changes to `public/index.html` or any frontend-visible behavior:
 
 1. **Run all unit tests**: `npm test`
-2. **Generate fresh screenshots** for visual validation:
+2. **Run dev-test visual validation** (default for all UI changes):
    ```bash
    npm start &                     # ensure server is running
    npm install --no-save puppeteer # if not already installed
-   npm run screenshots
+   npm run dev-test                # captures all 5 views
+   # or capture a specific view:
+   npm run dev-test:eventlog       # Event Log table view
+   npm run dev-test:detail         # Activity timeline view
    ```
-3. **Provide screenshots to the user** so they can visually verify the UI changes without manually opening the browser. The 4 screenshots cover:
-   - Sessions list overview
-   - Session detail (Activity / Event Log)
-   - Agents tab
-   - Settings & Config page
-4. Screenshots auto-mask sensitive content (paths, usernames, project names)
+   Available views: `sessions`, `detail`, `eventlog`, `agents`, `settings`, `all` (default)
+   
+   Advanced usage:
+   ```bash
+   # List all available sessions with IDs
+   node scripts/take-screenshots.js --list
+   # Capture a specific session by ID
+   node scripts/take-screenshots.js --view eventlog --session <id>
+   # Full options
+   node scripts/take-screenshots.js --view detail --session <id> --port 3456
+   ```
+3. **Provide screenshots to the user** so they can visually verify the UI changes without manually opening the browser. The dev-test captures:
+   - `devtest-sessions.png` — Sessions list overview
+   - `devtest-detail.png` — Session detail (Activity timeline)
+   - `devtest-eventlog.png` — Session detail (Event Log table)
+   - `devtest-agents.png` — Agents tab
+   - `devtest-settings.png` — Settings & Config page
+4. Screenshots use `devtest-*.png` naming (gitignored) and are saved to project root
 
 ## API Structure
 
@@ -77,8 +95,8 @@ AgentPulse auto-discovers data from standard locations:
 ## Gitignored Assets
 
 These are generated and not committed:
-- `scripts/` — screenshot and demo recording helpers
 - `demo-frames/` — individual GIF frames
-- `screenshot-*.png` — documentation screenshots
+- `screenshot-*.png` — documentation screenshots (masked)
+- `devtest-*.png` — dev-test visual validation screenshots
 - `demo.gif` — animated demo (referenced in README)
 - `session-names.json` — runtime session name cache

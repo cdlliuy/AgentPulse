@@ -26,7 +26,10 @@
     "dev": "node server.js",
     "test": "jest --verbose",
     "test:watch": "jest --watch",
-    "screenshots": "node scripts/take-screenshots.js",
+    "dev-test": "node scripts/take-screenshots.js",
+    "dev-test:eventlog": "node scripts/take-screenshots.js --view eventlog",
+    "dev-test:detail": "node scripts/take-screenshots.js --view detail",
+    "screenshots": "node scripts/take-screenshots.js --mask",
     "demo": "node scripts/record-demo.js"
   },
   "dependencies": {
