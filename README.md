@@ -170,6 +170,7 @@ agentpulse/
   server.js          — Express server, REST APIs, WebSocket, all business logic
   server.test.js     — Jest + Supertest tests (96 tests, ~85% line coverage)
   public/index.html  — Single-page frontend (vanilla JS, no framework)
+  scripts/           — Screenshot & demo recording helpers (gitignored)
   package.json       — Dependencies: express, ws; devDeps: jest, supertest
   LICENSE            — MIT License
 ```
@@ -195,6 +196,25 @@ npx jest --coverage     # maintain >80% line coverage
 - [ ] No duplicated logic
 - [ ] Sensitive data masked
 - [ ] No unnecessary new dependencies
+
+### Screenshot & Demo Scripts
+
+Helper scripts in `scripts/` generate documentation assets. They require [Puppeteer](https://pptr.dev/) and a running AgentPulse server.
+
+```bash
+# Prerequisites (not included in production dependencies)
+npm install --no-save puppeteer gif-encoder-2 pngjs
+
+# Start the server first
+npm start
+```
+
+| Command | Script | Output |
+|---------|--------|--------|
+| `npm run screenshots` | `scripts/take-screenshots.js` | 4 PNGs: `screenshot-sessions.png`, `screenshot-detail.png`, `screenshot-agents.png`, `screenshot-settings.png` |
+| `npm run demo` | `scripts/record-demo.js` | 9 frames in `demo-frames/` + `demo.gif` |
+
+Both scripts automatically mask sensitive content (file paths, usernames, project names) before capture.
 
 ## License
 
