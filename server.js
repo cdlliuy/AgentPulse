@@ -165,7 +165,11 @@ function parseConversation(jsonlPath, recentLineCount = 200) {
     const messagePollIds = new Set(); // track tool calls that poll for external user messages
     let inCronContext = false; // true after a cron enqueue, false after first tool call is tracked
     let cronChannel = 'remote'; // detected channel from cron prompt
-    const MESSAGE_POLL_KEYWORDS = /message|poll|check|fetch|command|消息|指令|轮询/i;
+    let pendingSkillExpansion = false; // true after Skill tool_result, next user text is expanded prompt
+    const skillToolUseIds = new Set(); // track Skill tool_use IDs to detect their results
+    // Detect crons that poll for incoming user messages from chat platforms
+    // Must match message-receiving patterns, not just crons that mention messaging platforms
+    const MESSAGE_POLL_PATTERN = /(?:poll|check|fetch|read)\s+(?:for\s+)?(?:new\s+)?(?:\w+\s+)?(?:message|消息|指令)|feishu-poll|slack-poll|teams-poll|wechat-poll|消息轮询|轮询消息|检查.*消息|查看.*消息/i;
     const EMPTY_RESULT_PATTERNS = [
       '(Bash completed with no output)',
       'No new', 'no new', 'null', '""', "''", '{}', '[]'
@@ -183,6 +187,7 @@ function parseConversation(jsonlPath, recentLineCount = 200) {
         if (obj.type === 'user') {
           totalUserMessages++;
           const contentArr = obj.message?.content || [];
+          const hasToolResults = contentArr.some(c => c.type === 'tool_result');
           const textParts = contentArr
             .filter(c => c.type === 'text')
             .map(c => c.text)
@@ -190,9 +195,24 @@ function parseConversation(jsonlPath, recentLineCount = 200) {
             .replace(/<ide_[^>]*>[\s\S]*?<\/ide_[^>]*>/g, '')
             .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '')
             .trim();
+
+          // Detect if this user message contains a Skill tool_result —
+          // the NEXT text-only user message will be the expanded skill prompt
+          for (const c of contentArr) {
+            if (c.type === 'tool_result' && skillToolUseIds.has(c.tool_use_id)) {
+              pendingSkillExpansion = true;
+              skillToolUseIds.delete(c.tool_use_id);
+            }
+          }
+
           if (textParts) {
+            // If this is a text-only message right after a Skill tool_result,
+            // it's the expanded skill prompt, not real user input
+            const isSkillPrompt = pendingSkillExpansion && !hasToolResults;
+            if (isSkillPrompt) pendingSkillExpansion = false;
+
             timeline.push({
-              type: 'user',
+              type: isSkillPrompt ? 'skill-prompt' : 'user',
               timestamp: obj.timestamp,
               text: textParts.slice(0, 400),
               uuid: obj.uuid
@@ -226,9 +246,11 @@ function parseConversation(jsonlPath, recentLineCount = 200) {
         }
 
         // Track queue-operation (cron triggers) — these contain the actual cron prompt
-        if (obj.type === 'queue-operation' && obj.operation === 'enqueue' && obj.content) {
-          // Detect if this cron is polling for messages
-          if (MESSAGE_POLL_KEYWORDS.test(obj.content)) {
+        // Skip <task-notification> entries — those are background agent completion notices, not cron triggers
+        if (obj.type === 'queue-operation' && obj.operation === 'enqueue' && obj.content
+            && !obj.content.trimStart().startsWith('<task-notification>')) {
+          // Detect if this cron is polling for incoming messages from a chat platform
+          if (MESSAGE_POLL_PATTERN.test(obj.content)) {
             inCronContext = true;
             // Detect channel
             const prompt = obj.content.toLowerCase();
@@ -292,6 +314,7 @@ function parseConversation(jsonlPath, recentLineCount = 200) {
 
               // Track Skill invocations
               if (c.name === 'Skill') {
+                skillToolUseIds.add(c.id);
                 timeline.push({
                   type: 'skill',
                   timestamp: obj.timestamp,
@@ -372,6 +395,9 @@ function parseConversation(jsonlPath, recentLineCount = 200) {
       // Mark events with content quality for client-side filtering
       if (evt.type === 'user') {
         evt.hasContent = true;
+      } else if (evt.type === 'skill-prompt') {
+        evt.hasContent = false; // expanded skill prompts are system content, hide by default
+        evt.isSkillPrompt = true;
       } else if (evt.type === 'remote-input') {
         evt.hasContent = true;
       } else if (evt.type === 'cron-trigger') {
