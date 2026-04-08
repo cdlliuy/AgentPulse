@@ -238,8 +238,20 @@ function processUserMessage(obj, state) {
     });
   }
 
-  // Check tool_result items for remote user input
+  // Check tool_result items for remote user input or AskUserQuestion answers
   for (const c of contentArr) {
+    if (c.type === 'tool_result' && state.askQuestionIds.has(c.tool_use_id)) {
+      const text = typeof c.content === 'string' ? c.content :
+        Array.isArray(c.content) ? c.content.map(p => p.text || '').join(' ') : '';
+      if (text.trim()) {
+        state.timeline.push({
+          type: 'user-answer',
+          timestamp: obj.timestamp,
+          text: text.slice(0, T.TIMELINE)
+        });
+      }
+      state.askQuestionIds.delete(c.tool_use_id);
+    }
     if (c.type === 'tool_result' && state.messagePollIds.has(c.tool_use_id)) {
       const text = typeof c.content === 'string' ? c.content :
         Array.isArray(c.content) ? c.content.map(p => p.text || '').join(' ') : '';
@@ -320,6 +332,9 @@ function processAssistantMessage(obj, state) {
         const job = state.cronJobs.find(j => j.jobId === c.input.id);
         if (job) job.status = 'deleted';
       }
+      if (c.name === 'AskUserQuestion') {
+        state.askQuestionIds.add(c.id);
+      }
     }
     if (c.type === 'text') textContent += c.text;
   }
@@ -380,6 +395,8 @@ function classifyTimelineEvents(timeline) {
       evt.hasAgent = hasAgent;
     } else if (evt.type === 'skill') {
       evt.hasContent = true;
+    } else if (evt.type === 'user-answer') {
+      evt.hasContent = true;
     }
     return evt;
   });
@@ -398,7 +415,7 @@ function parseConversation(jsonlPath, recentLineCount = 200) {
     const state = {
       totalUserMessages: 0, totalAssistantMessages: 0, totalToolCalls: 0,
       agents: [], todos: [], cronJobs: [], timeline: [],
-      messagePollIds: new Set(), skillToolUseIds: new Set(),
+      messagePollIds: new Set(), skillToolUseIds: new Set(), askQuestionIds: new Set(),
       inCronContext: false, cronChannel: 'remote', pendingSkillExpansion: false,
     };
 
@@ -462,6 +479,7 @@ function summarizeInput(toolName, input) {
     case 'TodoWrite': return `${(input.todos || []).length} items`;
     case 'Skill': return input.skill || '';
     case 'CronCreate': return input.prompt?.slice(0, T.CRON_PROMPT) || '';
+    case 'AskUserQuestion': return (input.questions || []).map(q => q.question).join('; ').slice(0, T.TOOL_INPUT) || '';
     default: return JSON.stringify(input).slice(0, T.TOOL_INPUT);
   }
 }

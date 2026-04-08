@@ -1147,6 +1147,9 @@ function renderTimeline(s) {
     if (evt.type === 'skill') {
       nodes.push({ cls: 'skill', label: 'Skill', content: evt.skill + (evt.args ? ' ' + evt.args : ''), time: evt.timestamp });
     }
+    if (evt.type === 'user-answer') {
+      nodes.push({ cls: 'user', label: 'Answer', content: evt.text?.slice(0,200), time: evt.timestamp });
+    }
   }
 
   return `
@@ -1171,13 +1174,13 @@ function renderEvents(s) {
 
   // Apply filter
   if (eventFilter === 'user') {
-    events = events.filter(e => e.type === 'user' || e.type === 'remote-input');
+    events = events.filter(e => e.type === 'user' || e.type === 'remote-input' || e.type === 'user-answer');
   } else if (eventFilter === 'feishu') {
     events = events.filter(e => e.type === 'remote-input');
   } else if (eventFilter === 'substantive') {
     events = events.filter(e => e.hasContent === true);
   } else if (eventFilter === 'agents') {
-    events = events.filter(e => e.type === 'user' || e.type === 'remote-input' || e.hasAgent === true || e.type === 'skill');
+    events = events.filter(e => e.type === 'user' || e.type === 'remote-input' || e.type === 'user-answer' || e.hasAgent === true || e.type === 'skill');
   }
   // 'all' shows everything including cron triggers
 
@@ -1279,6 +1282,13 @@ function renderEvents(s) {
           return `<div class="event-item" style="border-left:3px solid ${color};background:var(--surface2)">
             <span class="event-time">${fmtDate(evt.timestamp)}</span>
             <span class="event-type" style="color:${color}">${label}</span>
+            <span class="event-text">${esc(evt.text)}</span>
+          </div>`;
+        }
+        if (evt.type === 'user-answer') {
+          return `<div class="event-item" style="border-left:3px solid var(--purple);background:var(--surface2)">
+            <span class="event-time">${fmtDate(evt.timestamp)}</span>
+            <span class="event-type" style="color:var(--purple)">ANSWER</span>
             <span class="event-text">${esc(evt.text)}</span>
           </div>`;
         }
