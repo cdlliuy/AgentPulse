@@ -1166,7 +1166,7 @@ List 2-5 key lessons or insights from this session that would be useful for futu
 - Problems encountered and how they were solved
 - Patterns or techniques worth reusing
 
-Keep the total response under 400 words. Use plain text, no markdown headers beyond the three section headers above. Write in the same language as the user messages (if Chinese, respond in Chinese).
+Keep the total response under 400 words. Use plain text, no markdown headers beyond the three section headers above. Always respond in English regardless of the language used in the session.
 
 === SESSION DATA ===
 ${contextText}`;

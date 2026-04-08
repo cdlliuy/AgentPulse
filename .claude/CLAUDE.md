@@ -39,7 +39,7 @@ npm run demo       # Record demo GIF (requires running server + puppeteer + gif-
 - When adding new API endpoints or server logic, add corresponding tests in `server.test.js`
 - Test patterns: use Supertest for HTTP endpoints, mock `fs` and `child_process` for unit tests
 
-## Mandatory Validation After Changes
+## Required Validation After Changes
 
 **Any change to `server.js` or `public/index.html` MUST be validated with both steps below before considering the task complete.** This applies to all changes — refactoring, bug fixes, new features, cleanup — not just UI-visible changes. Skipping this is not acceptable.
 
