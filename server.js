@@ -390,9 +390,11 @@ function classifyTimelineEvents(timeline) {
       const hasText = evt.text && evt.text.trim().length > 10;
       const hasAgent = (evt.tools || []).some(t => t.tool === 'Agent');
       const hasSkill = (evt.tools || []).some(t => t.tool === 'Skill');
-      evt.hasContent = hasText || hasAgent || hasSkill;
+      const hasMcp = (evt.tools || []).some(t => t.tool.startsWith('mcp__'));
+      evt.hasContent = hasText || hasAgent || hasSkill || hasMcp;
       evt.isToolOnly = !hasText && (evt.tools || []).length > 0;
       evt.hasAgent = hasAgent;
+      evt.hasMcp = hasMcp;
     } else if (evt.type === 'skill') {
       evt.hasContent = true;
     } else if (evt.type === 'user-answer') {
@@ -466,6 +468,13 @@ function parseConversation(jsonlPath, recentLineCount = 200) {
 
 function summarizeInput(toolName, input) {
   if (!input) return '';
+  if (toolName.startsWith('mcp__')) {
+    const parts = toolName.replace(/^mcp__/, '').split('__');
+    const server = parts[0] || '';
+    const command = parts.slice(1).join('__') || '';
+    const detail = input.intent || input.command || '';
+    return `[${server}] ${command}${detail ? ': ' + detail : ''}`.slice(0, T.TOOL_INPUT);
+  }
   switch (toolName) {
     case 'Bash': return input.command?.slice(0, T.BASH_CMD) || '';
     case 'Read': return input.file_path || '';

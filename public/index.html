@@ -160,6 +160,7 @@
     .event-tools { margin-top: 3px; }
     .tool-tag { display: inline-block; padding: 1px 5px; margin: 1px 3px 1px 0; border-radius: 3px; font-size: 10px; background: var(--surface2); border: 1px solid var(--border); color: var(--orange); }
     .tool-tag.agent { color: var(--cyan); border-color: var(--cyan)44; }
+    .tool-tag.mcp { color: #2dd4bf; border-color: #2dd4bf44; }
     .tool-input { color: var(--text-faint); font-size: 10px; margin-left: 2px; }
     .event-time { font-size: 10px; color: var(--text-faint); float: right; }
 
@@ -190,6 +191,7 @@
     .wf-node.agent::before { border-color: var(--cyan); background: var(--cyan); }
     .wf-node.tool::before { border-color: var(--orange); background: var(--orange); }
     .wf-node.skill::before { border-color: var(--pink); background: var(--pink); }
+    .wf-node.mcp::before { border-color: #2dd4bf; background: #2dd4bf; }
     .wf-node .wf-label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; }
     .wf-node .wf-content { font-size: 12px; margin-top: 2px; }
     .wf-node .wf-time { font-size: 10px; color: var(--text-faint); }
@@ -788,6 +790,7 @@ function filtered() {
 }
 
 function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+function fmtMcpTool(name) { const p = name.replace(/^mcp__/,'').split('__'); return p.length >= 2 ? p[0] + ' / ' + p.slice(1).join('__') : p[0]; }
 function timeAgo(ts) {
   if (!ts) return '';
   const d = typeof ts === 'number' ? ts : new Date(ts).getTime();
@@ -1122,10 +1125,11 @@ function renderTimeline(s) {
       nodes.push({ cls: 'user', label: 'User', content: evt.text.slice(0,200), time: evt.timestamp });
     }
     if (evt.type === 'assistant') {
-      // Check for agent/skill tool calls
+      // Check for agent/skill/mcp tool calls
       const agentTools = (evt.tools||[]).filter(t => t.tool === 'Agent');
       const skillTools = (evt.tools||[]).filter(t => t.tool === 'Skill');
-      const otherTools = (evt.tools||[]).filter(t => t.tool !== 'Agent' && t.tool !== 'Skill');
+      const mcpTools = (evt.tools||[]).filter(t => t.tool.startsWith('mcp__'));
+      const otherTools = (evt.tools||[]).filter(t => t.tool !== 'Agent' && t.tool !== 'Skill' && !t.tool.startsWith('mcp__'));
 
       if (agentTools.length > 0) {
         for (const a of agentTools) {
@@ -1136,6 +1140,10 @@ function renderTimeline(s) {
         for (const sk of skillTools) {
           nodes.push({ cls: 'skill', label: 'Skill', content: sk.input, time: evt.timestamp });
         }
+      }
+      if (mcpTools.length > 0) {
+        const content = mcpTools.map(t => fmtMcpTool(t.tool) + (t.input ? ': ' + t.input.slice(0,60) : '')).join(' | ').slice(0,200);
+        nodes.push({ cls: 'mcp', label: 'MCP', content, time: evt.timestamp });
       }
       if (evt.text && !agentTools.length) {
         const toolSummary = otherTools.length > 0 ? ` [${otherTools.map(t=>t.tool).join(', ')}]` : '';
@@ -1181,6 +1189,8 @@ function renderEvents(s) {
     events = events.filter(e => e.hasContent === true);
   } else if (eventFilter === 'agents') {
     events = events.filter(e => e.type === 'user' || e.type === 'remote-input' || e.type === 'user-answer' || e.hasAgent === true || e.type === 'skill');
+  } else if (eventFilter === 'mcp') {
+    events = events.filter(e => e.hasMcp === true);
   }
   // 'all' shows everything including cron triggers
 
@@ -1220,6 +1230,7 @@ function renderEvents(s) {
     ['user', 'User Only'],
     ['feishu', 'Remote Input'],
     ['agents', 'User + Agents'],
+    ['mcp', 'MCP Tools'],
     ['all', 'All (incl. cron)']
   ].map(([k, label]) =>
     `<button class="ef-btn ${eventFilter===k?'active':''}" onclick="setEventFilter('${k}')">${label}</button>`
@@ -1255,10 +1266,12 @@ function renderEvents(s) {
           </div>`;
         }
         if (evt.type === 'assistant') {
-          const toolsHtml = (evt.tools||[]).map(t =>
-            `<span class="tool-tag ${t.tool==='Agent'?'agent':''}">${esc(t.tool)}</span><span class="tool-input">${esc(t.input?.slice(0,80))}</span>`
-          ).join(' ');
-          const borderColor = evt.hasAgent ? 'var(--cyan)' : evt.hasContent ? 'var(--green)' : 'var(--border)';
+          const toolsHtml = (evt.tools||[]).map(t => {
+            const cls = t.tool==='Agent'?'agent':t.tool.startsWith('mcp__')?'mcp':'';
+            const name = t.tool.startsWith('mcp__') ? fmtMcpTool(t.tool) : t.tool;
+            return `<span class="tool-tag ${cls}">${esc(name)}</span><span class="tool-input">${esc(t.input?.slice(0,80))}</span>`;
+          }).join(' ');
+          const borderColor = evt.hasMcp ? '#2dd4bf' : evt.hasAgent ? 'var(--cyan)' : evt.hasContent ? 'var(--green)' : 'var(--border)';
           const mergeInfo = evt._mergeCount ? ` <span style="color:var(--text-faint);font-size:10px">(×${evt._mergeCount + 1} similar)</span>` : '';
           return `<div class="event-item" style="border-left:3px solid ${borderColor}">
             <span class="event-time">${fmtDate(evt.timestamp)}</span>
