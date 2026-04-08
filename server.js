@@ -30,8 +30,8 @@ const AI_SUMMARY_CACHE_TTL_MS = 600000; // 10 min
 
 // ── Truncation Limits ─────────────────────────────────
 const T = {
-  TIMELINE: 400,      // user/assistant/cron event text
-  REMOTE_INPUT: 500,  // remote input (chat platform messages)
+  TIMELINE: 1024,     // user/assistant/cron event text
+  REMOTE_INPUT: 1024, // remote input (chat platform messages)
   BASH_CMD: 150,      // Bash command summary
   URL: 100,           // WebFetch URL
   CRON_PROMPT: 80,    // CronCreate prompt
