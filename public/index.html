@@ -919,8 +919,19 @@ function renderList() {
   }).join('');
 }
 
-function selectSession(id) {
-  selectedId = id; renderList(); renderDetail(id);
+async function selectSession(id) {
+  selectedId = id; renderList();
+  // If session not in loaded list (e.g. search-only stub), fetch from server
+  if (!sessions.find(x => x.sessionId === id)) {
+    try {
+      const resp = await fetch(`/api/sessions/${id}`);
+      if (resp.ok) {
+        const full = await resp.json();
+        sessions.push(full);
+      }
+    } catch {}
+  }
+  renderDetail(id);
 }
 
 function setTab(tab) { activeTab = tab; if (selectedId) renderDetail(selectedId); }
