@@ -691,6 +691,44 @@ app.get('/api/sessions', (req, res) => {
   res.json(sessions);
 });
 
+app.get('/api/sessions/search', (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (q.length < 2) return res.status(400).json({ error: 'Query must be at least 2 characters' });
+  const needle = q.toLowerCase();
+  const conversations = discoverAllConversations();
+  const results = [];
+  for (const conv of conversations) {
+    try {
+      const content = fs.readFileSync(conv.path, 'utf8');
+      const lower = content.toLowerCase();
+      const idx = lower.indexOf(needle);
+      if (idx === -1) continue;
+      // Count occurrences (up to 999)
+      let matches = 0;
+      let pos = 0;
+      while (pos < lower.length && matches < 999) {
+        const found = lower.indexOf(needle, pos);
+        if (found === -1) break;
+        matches++;
+        pos = found + needle.length;
+      }
+      // Extract snippet around first match
+      const start = Math.max(0, idx - 60);
+      const end = Math.min(content.length, idx + q.length + 60);
+      const snippet = (start > 0 ? '...' : '') + content.slice(start, end).replace(/\n/g, ' ') + (end < content.length ? '...' : '');
+      results.push({
+        sessionId: conv.sessionId,
+        project: conv.project,
+        matches,
+        snippet,
+        lastModified: conv.lastModified
+      });
+      if (results.length >= 50) break;
+    } catch {}
+  }
+  res.json(results);
+});
+
 app.get('/api/sessions/:id', (req, res) => {
   const sessions = buildSessionList(true);
   const session = sessions.find(s => s.sessionId === req.params.id);

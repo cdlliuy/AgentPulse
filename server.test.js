@@ -434,6 +434,50 @@ describe('REST API', () => {
     expect(res.status).toBe(404);
   });
 
+  test('GET /api/sessions/search returns 400 without query', async () => {
+    const res = await request(app).get('/api/sessions/search');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/at least 2/);
+  });
+
+  test('GET /api/sessions/search returns 400 for short query', async () => {
+    const res = await request(app).get('/api/sessions/search?q=a');
+    expect(res.status).toBe(400);
+  });
+
+  test('GET /api/sessions/search returns array for valid query', async () => {
+    const res = await request(app).get('/api/sessions/search?q=test');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    for (const item of res.body) {
+      expect(item).toHaveProperty('sessionId');
+      expect(item).toHaveProperty('project');
+      expect(item).toHaveProperty('matches');
+      expect(item).toHaveProperty('snippet');
+      expect(typeof item.matches).toBe('number');
+    }
+  });
+
+  test('GET /api/sessions/search returns results with correct shape', async () => {
+    // Use a common word that will match some sessions
+    const res = await request(app).get('/api/sessions/search?q=message');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    // Verify no more than 50 results
+    expect(res.body.length).toBeLessThanOrEqual(50);
+  });
+
+  test('GET /api/sessions/search is case-insensitive', async () => {
+    // Search with different casing should return same results
+    const lower = await request(app).get('/api/sessions/search?q=message');
+    const upper = await request(app).get('/api/sessions/search?q=MESSAGE');
+    expect(lower.status).toBe(200);
+    expect(upper.status).toBe(200);
+    const lowerIds = lower.body.map(r => r.sessionId).sort();
+    const upperIds = upper.body.map(r => r.sessionId).sort();
+    expect(lowerIds).toEqual(upperIds);
+  });
+
   test('GET /api/settings returns MCP servers data', async () => {
     const res = await request(app).get('/api/settings');
     expect(res.status).toBe(200);
@@ -880,9 +924,8 @@ describe('REST API — additional endpoints', () => {
   test('PUT /api/sessions/:id/title modifies title of completed session', async () => {
     const sessionsRes = await request(app).get('/api/sessions');
     const deadSession = sessionsRes.body.find(s => !s.alive && s.title);
-    if (!deadSession) return; // skip if no completed sessions with titles
+    if (!deadSession) return;
 
-    // Save original title
     const originalTitle = deadSession.title;
 
     // Rename
@@ -900,7 +943,7 @@ describe('REST API — additional endpoints', () => {
     await request(app)
       .put(`/api/sessions/${deadSession.sessionId}/title`)
       .send({ title: originalTitle });
-  });
+  }, 15000);
 
   // ── Claude CLI Status ──────────────────────────────────
 

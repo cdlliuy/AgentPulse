@@ -27,6 +27,13 @@
     .filter-bar button { background: var(--surface2); border: 1px solid var(--border); color: var(--text-dim); padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
     .filter-bar button.active { border-color: var(--accent); color: var(--accent); background: #58a6ff15; }
     .filter-bar button:hover { border-color: var(--text-dim); }
+    .search-box { background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 4px; font-size: 12px; width: 180px; font-family: inherit; }
+    .search-box:focus { outline: none; border-color: var(--accent); }
+    .search-box::placeholder { color: var(--text-faint); }
+    .search-clear { background: none; border: none; color: var(--text-faint); cursor: pointer; font-size: 14px; padding: 0 4px; margin-left: -24px; }
+    .search-clear:hover { color: var(--text); }
+    .search-match { font-size: 10px; color: var(--accent); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .match-badge { background: var(--accent); color: var(--bg); font-size: 9px; padding: 1px 5px; border-radius: 8px; margin-left: 6px; }
 
     .container { display: flex; height: calc(100vh - 180px); }
 
@@ -246,6 +253,8 @@
       <button class="active" onclick="setFilter('all')">All</button>
       <button onclick="setFilter('active')">Active Only</button>
       <button onclick="setFilter('historical')">Historical</button>
+      <input type="text" class="search-box" id="searchBox" placeholder="Search sessions..." oninput="onSearchInput(this.value)">
+      <button class="search-clear" id="searchClear" onclick="clearSearch()" style="display:none">&times;</button>
       <span style="flex:1"></span>
       <span style="font-size:11px;color:var(--text-faint)" id="projectList"></span>
     </div>
@@ -270,6 +279,7 @@ let suppressDetailRefresh = false; // prevent WS refresh from destroying interac
 const statefulTabs = new Set(['compound', 'cron', 'activity']); // tabs with interactive state that shouldn't auto-refresh
 let globalCronsCache = null; // cache global crons to avoid re-fetch flicker
 let eventFilter = 'substantive'; // 'all' | 'user' | 'substantive' | 'agents'
+let searchQuery = '', searchResults = null, searchTimer = null;
 let eventOrder = 'oldest'; // 'oldest' | 'newest'
 let eventPage = 0;
 let activityView = 'table'; // 'timeline' | 'table' — default to curated event log
@@ -769,6 +779,27 @@ function setFilter(f) {
   renderList();
 }
 
+function onSearchInput(val) {
+  clearTimeout(searchTimer);
+  searchQuery = val.trim();
+  document.getElementById('searchClear').style.display = searchQuery ? '' : 'none';
+  if (searchQuery.length < 2) { searchResults = null; renderList(); return; }
+  searchTimer = setTimeout(async () => {
+    try {
+      const resp = await fetch('/api/sessions/search?q=' + encodeURIComponent(searchQuery));
+      if (resp.ok) { searchResults = await resp.json(); renderList(); }
+    } catch {}
+  }, 300);
+}
+
+function clearSearch() {
+  searchQuery = '';
+  searchResults = null;
+  document.getElementById('searchBox').value = '';
+  document.getElementById('searchClear').style.display = 'none';
+  renderList();
+}
+
 function refresh() {
   const active = sessions.filter(s => s.alive).length;
   const totalAgents = sessions.reduce((s, x) => s + (x.agents?.length || 0), 0);
@@ -784,9 +815,27 @@ function refresh() {
 }
 
 function filtered() {
-  if (filter === 'active') return sessions.filter(s => s.alive);
-  if (filter === 'historical') return sessions.filter(s => !s.alive);
-  return sessions;
+  let list = sessions;
+  if (filter === 'active') list = list.filter(s => s.alive);
+  if (filter === 'historical') list = list.filter(s => !s.alive);
+  if (searchResults) {
+    const matchMap = new Map(searchResults.map(r => [r.sessionId, r]));
+    // Include sessions that match search, even if not in the current loaded list
+    const matched = list.filter(s => matchMap.has(s.sessionId));
+    // For sessions in search results but not in loaded list, create stubs
+    for (const r of searchResults) {
+      if (!matched.find(s => s.sessionId === r.sessionId)) {
+        matched.push({
+          sessionId: r.sessionId, project: r.project, alive: false, hasMetadata: false,
+          displayName: r.sessionId.slice(0, 8), totalUserMessages: 0, totalAssistantMessages: 0,
+          totalToolCalls: 0, agents: [], fileSizeKB: 0, _searchOnly: true
+        });
+      }
+    }
+    matched._matchMap = matchMap;
+    return matched;
+  }
+  return list;
 }
 
 function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
@@ -830,7 +879,11 @@ function agentIcon(type) {
 function renderList() {
   const el = document.getElementById('sessionList');
   const list = filtered();
-  if (!list.length) { el.innerHTML = '<div class="empty-state">No sessions</div>'; return; }
+  const matchMap = list._matchMap || null;
+  if (!list.length) {
+    el.innerHTML = searchResults ? '<div class="empty-state">No matching sessions</div>' : '<div class="empty-state">No sessions</div>';
+    return;
+  }
   el.innerHTML = list.map(s => {
     const agentDots = (s.agents || []).slice(-8).map(a =>
       `<span class="agent-dot ${a.status}" title="${esc(a.description)}"></span>`
@@ -838,18 +891,20 @@ function renderList() {
     const todoProgress = (s.todos || []).length > 0
       ? ` | TODO: ${s.todos.filter(t=>t.status==='completed').length}/${s.todos.length}`
       : '';
+    const match = matchMap?.get(s.sessionId);
+    const matchInfo = match ? `<div class="search-match"><span class="match-badge">${match.matches} match${match.matches>1?'es':''}</span> ${esc(match.snippet)}</div>` : '';
     return `
     <div class="session-card ${s.sessionId===selectedId?'selected':''}" onclick="selectSession('${s.sessionId}')">
       <div class="session-title">
         <span class="status-dot ${s.alive?'alive':'dead'}"></span>
         ${esc(s.displayName || s.title || s.sessionId.slice(0,8))}
-        ${s.customName ? '<span style="font-size:9px;color:var(--cyan);margin-left:4px">✎</span>' : ''}
+        ${s.customName ? '<span style="font-size:9px;color:var(--cyan);margin-left:4px">&#9998;</span>' : ''}
         ${!s.alive && !s.hasMetadata ? '<span class="badge historical">hist</span>' : ''}
       </div>
       <div class="session-meta">
         ${epBadge(s.entrypoint)}
-        <span>${esc(shortPath(s.cwd))}</span>
-        <span>${timeAgo(s.startedAt)} ago</span>
+        ${s.project ? `<span title="${esc(s.project)}">${esc(s.project.split('--').pop())}</span>` : `<span>${esc(shortPath(s.cwd))}</span>`}
+        <span>${fmtDate(s.startedAt)}</span>
         ${agentDots ? `<span class="agent-dots">${agentDots}</span>` : ''}
       </div>
       <div class="session-stats">
@@ -859,6 +914,7 @@ function renderList() {
         <span>${Math.round(s.fileSizeKB||0)}KB</span>
         ${todoProgress}
       </div>
+      ${matchInfo}
     </div>`;
   }).join('');
 }
