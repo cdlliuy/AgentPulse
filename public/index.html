@@ -253,10 +253,9 @@
       <button class="active" onclick="setFilter('all')">All</button>
       <button onclick="setFilter('active')">Active Only</button>
       <button onclick="setFilter('historical')">Historical</button>
+      <select id="projectFilter" style="background:var(--bg-card);color:var(--text-dim);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:11px;cursor:pointer" onchange="projectFilter=this.value;renderList()"><option value="">All Projects</option></select>
       <input type="text" class="search-box" id="searchBox" placeholder="Search sessions..." oninput="onSearchInput(this.value)">
       <button class="search-clear" id="searchClear" onclick="clearSearch()" style="display:none">&times;</button>
-      <span style="flex:1"></span>
-      <select id="projectFilter" style="background:var(--bg-card);color:var(--text-dim);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:11px;cursor:pointer" onchange="projectFilter=this.value;renderList()"><option value="">All Projects</option></select>
     </div>
     <div class="container">
       <div class="session-list" id="sessionList"><div class="empty-state">Loading...</div></div>
