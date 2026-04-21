@@ -256,7 +256,7 @@
       <input type="text" class="search-box" id="searchBox" placeholder="Search sessions..." oninput="onSearchInput(this.value)">
       <button class="search-clear" id="searchClear" onclick="clearSearch()" style="display:none">&times;</button>
       <span style="flex:1"></span>
-      <span style="font-size:11px;color:var(--text-faint)" id="projectList"></span>
+      <select id="projectFilter" style="background:var(--bg-card);color:var(--text-dim);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:11px;cursor:pointer" onchange="projectFilter=this.value;renderList()"><option value="">All Projects</option></select>
     </div>
     <div class="container">
       <div class="session-list" id="sessionList"><div class="empty-state">Loading...</div></div>
@@ -274,7 +274,7 @@
   </div><!-- end app-layout -->
 
 <script>
-let sessions = [], selectedId = null, ws = null, filter = 'all', activeTab = 'overview';
+let sessions = [], selectedId = null, ws = null, filter = 'all', activeTab = 'overview', projectFilter = '';
 let suppressDetailRefresh = false; // prevent WS refresh from destroying interactive UI state
 const statefulTabs = new Set(['compound', 'cron', 'activity']); // tabs with interactive state that shouldn't auto-refresh
 let globalCronsCache = null; // cache global crons to avoid re-fetch flicker
@@ -806,8 +806,11 @@ function refresh() {
   document.getElementById('activeCount').textContent = active;
   document.getElementById('totalCount').textContent = sessions.length;
   document.getElementById('agentCount').textContent = totalAgents;
-  const projects = [...new Set(sessions.map(s => s.project).filter(Boolean))];
-  document.getElementById('projectList').textContent = projects.map(p => p.split('--').pop()).join(' | ');
+  const projects = [...new Set(sessions.map(s => s.project).filter(Boolean))].sort();
+  const pf = document.getElementById('projectFilter');
+  const cur = pf.value;
+  pf.innerHTML = '<option value="">All Projects</option>' + projects.map(p => `<option value="${esc(p)}"${p===cur?' selected':''}>${esc(p.split('--').pop())}</option>`).join('');
+  pf.value = cur;
   renderList();
   // Don't re-render detail panel if on a stateful tab or if user is typing in an input
   const inputFocused = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
@@ -818,6 +821,7 @@ function filtered() {
   let list = sessions;
   if (filter === 'active') list = list.filter(s => s.alive);
   if (filter === 'historical') list = list.filter(s => !s.alive);
+  if (projectFilter) list = list.filter(s => s.project === projectFilter);
   if (searchResults) {
     const matchMap = new Map(searchResults.map(r => [r.sessionId, r]));
     // Include sessions that match search, even if not in the current loaded list
