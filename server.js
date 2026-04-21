@@ -241,8 +241,10 @@ function processUserMessage(obj, state) {
   if (textParts) {
     const isSkillPrompt = state.pendingSkillExpansion && !hasToolResults;
     if (isSkillPrompt) state.pendingSkillExpansion = false;
+    const isCronPrompt = state.inCronContext && !isSkillPrompt;
+    if (isCronPrompt) state.inCronContext = false;
     const evt = {
-      type: isSkillPrompt ? 'skill-prompt' : 'user',
+      type: isSkillPrompt ? 'skill-prompt' : isCronPrompt ? 'cron-prompt' : 'user',
       timestamp: obj.timestamp,
       text: textParts.slice(0, T.TIMELINE),
       uuid: obj.uuid
@@ -401,6 +403,9 @@ function classifyTimelineEvents(timeline) {
     } else if (evt.type === 'remote-input') {
       evt.hasContent = true;
     } else if (evt.type === 'cron-trigger') {
+      evt.hasContent = false;
+      evt.isCron = true;
+    } else if (evt.type === 'cron-prompt') {
       evt.hasContent = false;
       evt.isCron = true;
     } else if (evt.type === 'assistant') {

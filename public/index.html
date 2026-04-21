@@ -1232,10 +1232,14 @@ function renderTimeline(s) {
     }
   }
 
+  const sortLabel = eventOrder === 'newest' ? 'newest first' : 'oldest first';
+  const displayNodes = nodes.slice(-40);
+  if (eventOrder === 'newest') displayNodes.reverse();
+
   return `
-    <div class="workflow-section"><h3>Activity Timeline <span style="font-size:11px;font-weight:400;color:var(--text-faint)">(newest first)</span></h3></div>
+    <div class="workflow-section"><h3>Activity Timeline <span style="font-size:11px;font-weight:400;color:var(--text-faint)">(${sortLabel})</span></h3></div>
     <div class="workflow-timeline">
-      ${nodes.slice(-40).reverse().map(n => `
+      ${displayNodes.map(n => `
         <div class="wf-node ${n.cls}">
           <span class="wf-label">${n.label}</span> <span class="wf-time">${fmtTime(n.time)}</span>
           <div class="wf-content">${esc(n.content)}</div>
@@ -1266,7 +1270,7 @@ function renderEvents(s) {
     if (e.type === 'user-answer') return eventCategories.has('user');
     if (e.type === 'remote-input') return eventCategories.has('remote');
     if (e.type === 'skill' || e.type === 'skill-prompt') return eventCategories.has('skill');
-    if (e.type === 'cron-trigger') return eventCategories.has('cron');
+    if (e.type === 'cron-trigger' || e.type === 'cron-prompt') return eventCategories.has('cron');
     if (e.type === 'assistant') {
       if (e.hasAgent) return eventCategories.has('agent');
       if (e.hasMcp) return eventCategories.has('mcp');
@@ -1399,6 +1403,13 @@ function renderEvents(s) {
             <span class="event-time">${fmtDate(evt.timestamp)}</span>
             <span class="event-type" style="color:var(--text-faint)">CRON</span>
             <span class="event-text" style="color:var(--text-faint)">${esc(evt.text?.slice(0,120))}...${mergeInfo}</span>
+          </div>`;
+        }
+        if (evt.type === 'cron-prompt') {
+          return `<div class="event-item" style="border-left:3px solid var(--text-faint);opacity:0.7">
+            <span class="event-time">${fmtDate(evt.timestamp)}</span>
+            <span class="event-type" style="color:var(--text-faint)">CRON PROMPT</span>
+            <span class="event-text" style="color:var(--text-faint)">${esc(evt.text?.slice(0,200))}</span>
           </div>`;
         }
         if (evt.type === 'skill-prompt') {
