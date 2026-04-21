@@ -532,6 +532,7 @@ function buildSessionList(includeHistorical = true) {
       entrypoint: meta?.entrypoint || 'unknown',
       startedAt: meta?.startedAt || (parsed.firstTimestamp ? new Date(parsed.firstTimestamp).getTime() : conv.lastModified),
       project: conv.project,
+      jsonlPath: conv.path,
       fileSizeKB: Math.round(conv.size / 1024),
       hasMetadata: !!meta,
       title: parsed.title || null,

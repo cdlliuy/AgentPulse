@@ -1074,6 +1074,8 @@ function renderOverview(s) {
       <div class="info-card"><div class="label">Last Activity</div><div class="value small">${s.lastActivity?timeAgo(s.lastActivity)+' ago':'N/A'}</div></div>
       <div class="info-card"><div class="label">Project</div><div class="value small">${esc(s.project?.split('--').pop()||'?')}</div></div>
       <div class="info-card"><div class="label">Entrypoint</div><div class="value small">${esc(s.entrypoint)}</div></div>
+      <div class="info-card"><div class="label">Session ID</div><div class="value small" style="font-family:monospace;font-size:11px;cursor:pointer;user-select:all" title="Click to copy" onclick="navigator.clipboard.writeText('${esc(s.sessionId)}')">${esc(s.sessionId)}</div></div>
+      ${s.jsonlPath ? `<div class="info-card" style="grid-column:span 2"><div class="label">JSONL File</div><div class="value small" style="font-family:monospace;font-size:10px;cursor:pointer;user-select:all;word-break:break-all" title="Click to copy path" onclick="navigator.clipboard.writeText('${esc(s.jsonlPath)}')">${esc(s.jsonlPath)}</div></div>` : ''}
     </div>
     ${s.alive ? `
     <div class="workflow-section">
