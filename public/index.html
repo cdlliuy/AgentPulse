@@ -1403,10 +1403,11 @@ function renderEvents(s) {
           </div>`;
         }
         if (evt.type === 'skill-prompt') {
+          const skillLabel = evt.skill ? `/${esc(evt.skill)}${evt.args ? ' ' + esc(evt.args) : ''}` : esc(evt.text?.slice(0,120)) + '...';
           return `<div class="event-item" style="border-left:3px solid var(--pink);opacity:0.6">
             <span class="event-time">${fmtDate(evt.timestamp)}</span>
             <span class="event-type" style="color:var(--pink)">SKILL PROMPT</span>
-            <span class="event-text" style="color:var(--text-faint)">${esc(evt.text?.slice(0,120))}...</span>
+            <span class="event-text" style="color:var(--pink)">${skillLabel}</span>
           </div>`;
         }
         return '';

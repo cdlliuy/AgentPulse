@@ -230,12 +230,17 @@ function processUserMessage(obj, state) {
   if (textParts) {
     const isSkillPrompt = state.pendingSkillExpansion && !hasToolResults;
     if (isSkillPrompt) state.pendingSkillExpansion = false;
-    state.timeline.push({
+    const evt = {
       type: isSkillPrompt ? 'skill-prompt' : 'user',
       timestamp: obj.timestamp,
       text: textParts.slice(0, T.TIMELINE),
       uuid: obj.uuid
-    });
+    };
+    if (isSkillPrompt && state.lastSkillInfo) {
+      evt.skill = state.lastSkillInfo.skill;
+      evt.args = state.lastSkillInfo.args;
+    }
+    state.timeline.push(evt);
   }
 
   // Check tool_result items for remote user input or AskUserQuestion answers
@@ -319,6 +324,7 @@ function processAssistantMessage(obj, state) {
       }
       if (c.name === 'Skill') {
         state.skillToolUseIds.add(c.id);
+        state.lastSkillInfo = { skill: c.input?.skill || '?', args: c.input?.args || '' };
         state.timeline.push({ type: 'skill', timestamp: obj.timestamp, skill: c.input?.skill || '?', args: c.input?.args || '' });
       }
       if (c.name === 'CronCreate') {
