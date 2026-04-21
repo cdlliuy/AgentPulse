@@ -242,7 +242,6 @@ function processUserMessage(obj, state) {
     const isSkillPrompt = state.pendingSkillExpansion && !hasToolResults;
     if (isSkillPrompt) state.pendingSkillExpansion = false;
     const isCronPrompt = state.inCronContext && !isSkillPrompt;
-    if (isCronPrompt) state.inCronContext = false;
     const evt = {
       type: isSkillPrompt ? 'skill-prompt' : isCronPrompt ? 'cron-prompt' : 'user',
       timestamp: obj.timestamp,
