@@ -279,7 +279,8 @@ const statefulTabs = new Set(['compound', 'cron', 'activity']); // tabs with int
 let globalCronsCache = null; // cache global crons to avoid re-fetch flicker
 let eventCategories = new Set(['user','remote','agent','mcp','skill','assistant']); // multi-select categories
 let searchQuery = '', searchResults = null, searchTimer = null;
-let eventOrder = 'oldest'; // 'oldest' | 'newest'
+let eventOrder = 'oldest'; // 'oldest' | 'newest' — Event Log sort
+let timelineOrder = 'newest'; // 'oldest' | 'newest' — Activity Timeline sort
 let eventPage = 0;
 let activityView = 'table'; // 'timeline' | 'table' — default to curated event log
 const EVENTS_PER_PAGE = 50;
@@ -1232,12 +1233,14 @@ function renderTimeline(s) {
     }
   }
 
-  const sortLabel = eventOrder === 'newest' ? 'newest first' : 'oldest first';
+  const sortLabel = timelineOrder === 'newest' ? 'newest first' : 'oldest first';
   const displayNodes = nodes.slice(-40);
-  if (eventOrder === 'newest') displayNodes.reverse();
+  if (timelineOrder === 'newest') displayNodes.reverse();
 
   return `
-    <div class="workflow-section"><h3>Activity Timeline <span style="font-size:11px;font-weight:400;color:var(--text-faint)">(${sortLabel})</span></h3></div>
+    <div class="workflow-section"><h3>Activity Timeline
+      <span style="font-size:11px;font-weight:400;color:var(--text-faint);cursor:pointer;margin-left:6px" onclick="timelineOrder=timelineOrder==='newest'?'oldest':'newest';renderDetail(selectedId)" title="Click to toggle sort order">(${sortLabel} ⇅)</span>
+    </h3></div>
     <div class="workflow-timeline">
       ${displayNodes.map(n => `
         <div class="wf-node ${n.cls}">
