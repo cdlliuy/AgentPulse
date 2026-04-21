@@ -208,14 +208,25 @@ function discoverAllConversations() {
 /** Process a user-type message: track user text, skill expansion, remote input */
 function processUserMessage(obj, state) {
   state.totalUserMessages++;
-  const contentArr = obj.message?.content || [];
+  const rawContent = obj.message?.content;
+  const contentArr = Array.isArray(rawContent) ? rawContent :
+    typeof rawContent === 'string' ? [{ type: 'text', text: rawContent }] : [];
   const hasToolResults = contentArr.some(c => c.type === 'tool_result');
-  const textParts = contentArr
+  const rawText = contentArr
     .filter(c => c.type === 'text')
     .map(c => c.text)
-    .join(' ')
+    .join(' ');
+  const isCommandMsg = typeof rawContent === 'string' && rawText.trimStart().startsWith('<command-message>');
+  const cmdNameMatch = isCommandMsg && rawText.match(/<command-name>\/?([^<]+)<\/command-name>/);
+  const cmdArgsMatch = cmdNameMatch && rawText.match(/<command-args>([^<]*)<\/command-args>/);
+  if (cmdNameMatch) {
+    state.pendingSkillExpansion = true;
+    state.lastSkillInfo = { skill: cmdNameMatch[1].trim(), args: (cmdArgsMatch?.[1] || '').trim() };
+  }
+  const textParts = rawText
     .replace(/<ide_[^>]*>[\s\S]*?<\/ide_[^>]*>/g, '')
     .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '')
+    .replace(/<command-[^>]*>[\s\S]*?<\/command-[^>]*>/g, '')
     .trim();
 
   // Detect if this user message contains a Skill tool_result —
