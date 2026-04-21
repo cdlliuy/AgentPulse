@@ -167,7 +167,7 @@
     .event-tools { margin-top: 3px; }
     .tool-tag { display: inline-block; padding: 1px 5px; margin: 1px 3px 1px 0; border-radius: 3px; font-size: 10px; background: var(--surface2); border: 1px solid var(--border); color: var(--orange); }
     .tool-tag.agent { color: var(--cyan); border-color: var(--cyan)44; }
-    .tool-tag.mcp { color: #2dd4bf; border-color: #2dd4bf44; }
+    .tool-tag.mcp { color: var(--purple); border-color: #bc8cff44; }
     .tool-input { color: var(--text-faint); font-size: 10px; margin-left: 2px; }
     .event-time { font-size: 10px; color: var(--text-faint); float: right; }
 
@@ -198,7 +198,7 @@
     .wf-node.agent::before { border-color: var(--cyan); background: var(--cyan); }
     .wf-node.tool::before { border-color: var(--orange); background: var(--orange); }
     .wf-node.skill::before { border-color: var(--pink); background: var(--pink); }
-    .wf-node.mcp::before { border-color: #2dd4bf; background: #2dd4bf; }
+    .wf-node.mcp::before { border-color: var(--purple); background: var(--purple); }
     .wf-node .wf-label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; }
     .wf-node .wf-content { font-size: 12px; margin-top: 2px; }
     .wf-node .wf-time { font-size: 10px; color: var(--text-faint); }
@@ -1317,10 +1317,10 @@ function renderEvents(s) {
     ['user', 'User', 'var(--accent)'],
     ['remote', 'Remote', 'var(--yellow)'],
     ['agent', 'Agent', 'var(--cyan)'],
-    ['mcp', 'MCP', '#2dd4bf'],
+    ['mcp', 'MCP', 'var(--purple)'],
     ['skill', 'Skill', 'var(--pink)'],
     ['assistant', 'Assistant', 'var(--green)'],
-    ['cron', 'Cron', 'var(--text-faint)']
+    ['cron', 'Cron', 'var(--red)']
   ];
   const catBtns = cats.map(([k, label, color]) => {
     const on = eventCategories.has(k);
@@ -1366,7 +1366,7 @@ function renderEvents(s) {
             const name = t.tool.startsWith('mcp__') ? fmtMcpTool(t.tool) : t.tool;
             return `<span class="tool-tag ${cls}">${esc(name)}</span><span class="tool-input">${esc(t.input?.slice(0,80))}</span>`;
           }).join(' ');
-          const borderColor = evt.hasMcp ? '#2dd4bf' : evt.hasAgent ? 'var(--cyan)' : evt.hasContent ? 'var(--green)' : 'var(--border)';
+          const borderColor = evt.hasMcp ? 'var(--purple)' : evt.hasAgent ? 'var(--cyan)' : evt.hasContent ? 'var(--green)' : 'var(--border)';
           const mergeInfo = evt._mergeCount ? ` <span style="color:var(--text-faint);font-size:10px">(×${evt._mergeCount + 1} similar)</span>` : '';
           return `<div class="event-item" style="border-left:3px solid ${borderColor}">
             <span class="event-time">${fmtDate(evt.timestamp)}</span>
@@ -1402,17 +1402,17 @@ function renderEvents(s) {
         }
         if (evt.type === 'cron-trigger') {
           const mergeInfo = evt._mergeCount ? ` <span style="color:var(--text-faint);font-size:10px">(×${evt._mergeCount + 1}, ${fmtDate(evt.timestamp)} – ${fmtDate(evt._lastTimestamp)})</span>` : '';
-          return `<div class="event-item" style="border-left:3px solid var(--orange);opacity:0.75">
+          return `<div class="event-item" style="border-left:3px solid var(--red);opacity:0.75">
             <span class="event-time">${fmtDate(evt.timestamp)}</span>
-            <span class="event-type" style="color:var(--orange)">CRON</span>
-            <span class="event-text" style="color:var(--orange)">${esc(evt.text?.slice(0,120))}...${mergeInfo}</span>
+            <span class="event-type" style="color:var(--red)">CRON</span>
+            <span class="event-text" style="color:var(--red)">${esc(evt.text?.slice(0,120))}...${mergeInfo}</span>
           </div>`;
         }
         if (evt.type === 'cron-prompt') {
-          return `<div class="event-item" style="border-left:3px solid var(--orange);opacity:0.8">
+          return `<div class="event-item" style="border-left:3px solid var(--red);opacity:0.8">
             <span class="event-time">${fmtDate(evt.timestamp)}</span>
-            <span class="event-type" style="color:var(--orange)">CRON PROMPT</span>
-            <span class="event-text" style="color:var(--orange)">${esc(evt.text?.slice(0,200))}</span>
+            <span class="event-type" style="color:var(--red)">CRON PROMPT</span>
+            <span class="event-text" style="color:var(--red)">${esc(evt.text?.slice(0,200))}</span>
           </div>`;
         }
         if (evt.type === 'skill-prompt') {
