@@ -1,6 +1,6 @@
 {
   "name": "agentdashpulse",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "AI Agent Management Dashboard — monitor and manage Claude Code, GitHub Copilot, and other AI agent sessions",
   "author": "Ying Liu",
   "license": "MIT",
