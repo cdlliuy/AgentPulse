@@ -278,7 +278,7 @@ let sessions = [], selectedId = null, ws = null, filter = 'all', activeTab = 'ov
 let suppressDetailRefresh = false; // prevent WS refresh from destroying interactive UI state
 const statefulTabs = new Set(['compound', 'cron', 'activity']); // tabs with interactive state that shouldn't auto-refresh
 let globalCronsCache = null; // cache global crons to avoid re-fetch flicker
-let eventFilter = 'substantive'; // 'all' | 'user' | 'substantive' | 'agents'
+let eventCategories = new Set(['user','remote','agent','mcp','skill','assistant']); // multi-select categories
 let searchQuery = '', searchResults = null, searchTimer = null;
 let eventOrder = 'oldest'; // 'oldest' | 'newest'
 let eventPage = 0;
@@ -1246,26 +1246,35 @@ function renderTimeline(s) {
   `;
 }
 
-function setEventFilter(f) { eventFilter = f; eventPage = 0; if (selectedId) renderDetail(selectedId); }
+function toggleEventCat(cat) {
+  if (eventCategories.has(cat)) eventCategories.delete(cat); else eventCategories.add(cat);
+  eventPage = 0; if (selectedId) renderDetail(selectedId);
+}
+function setAllEventCats(on) {
+  const all = ['user','remote','agent','mcp','skill','assistant','cron'];
+  eventCategories = new Set(on ? all : []);
+  eventPage = 0; if (selectedId) renderDetail(selectedId);
+}
 function setEventOrder(o) { eventOrder = o; eventPage = 0; if (selectedId) renderDetail(selectedId); }
 function setEventPage(p) { eventPage = p; if (selectedId) renderDetail(selectedId); }
 
 function renderEvents(s) {
   let events = (s.recentEvents || []).slice();
 
-  // Apply filter
-  if (eventFilter === 'user') {
-    events = events.filter(e => e.type === 'user' || e.type === 'remote-input' || e.type === 'user-answer');
-  } else if (eventFilter === 'feishu') {
-    events = events.filter(e => e.type === 'remote-input');
-  } else if (eventFilter === 'substantive') {
-    events = events.filter(e => e.hasContent === true);
-  } else if (eventFilter === 'agents') {
-    events = events.filter(e => e.type === 'user' || e.type === 'remote-input' || e.type === 'user-answer' || e.hasAgent === true || e.type === 'skill');
-  } else if (eventFilter === 'mcp') {
-    events = events.filter(e => e.hasMcp === true);
-  }
-  // 'all' shows everything including cron triggers
+  // Apply category filter
+  events = events.filter(e => {
+    if (e.type === 'user') return eventCategories.has('user');
+    if (e.type === 'user-answer') return eventCategories.has('user');
+    if (e.type === 'remote-input') return eventCategories.has('remote');
+    if (e.type === 'skill' || e.type === 'skill-prompt') return eventCategories.has('skill');
+    if (e.type === 'cron-trigger') return eventCategories.has('cron');
+    if (e.type === 'assistant') {
+      if (e.hasAgent) return eventCategories.has('agent');
+      if (e.hasMcp) return eventCategories.has('mcp');
+      return eventCategories.has('assistant');
+    }
+    return true;
+  });
 
   // Merge consecutive duplicate events (e.g. repeated empty cron polls)
   const merged = [];
@@ -1298,16 +1307,22 @@ function renderEvents(s) {
   const totalPages = Math.ceil(totalFiltered / EVENTS_PER_PAGE);
   const pageEvents = events.slice(eventPage * EVENTS_PER_PAGE, (eventPage + 1) * EVENTS_PER_PAGE);
 
-  const filterBtns = [
-    ['substantive', 'Substantive'],
-    ['user', 'User Only'],
-    ['feishu', 'Remote Input'],
-    ['agents', 'User + Agents'],
-    ['mcp', 'MCP Tools'],
-    ['all', 'All (incl. cron)']
-  ].map(([k, label]) =>
-    `<button class="ef-btn ${eventFilter===k?'active':''}" onclick="setEventFilter('${k}')">${label}</button>`
-  ).join('');
+  const cats = [
+    ['user', 'User', 'var(--accent)'],
+    ['remote', 'Remote', 'var(--yellow)'],
+    ['agent', 'Agent', 'var(--cyan)'],
+    ['mcp', 'MCP', '#2dd4bf'],
+    ['skill', 'Skill', 'var(--pink)'],
+    ['assistant', 'Assistant', 'var(--green)'],
+    ['cron', 'Cron', 'var(--text-faint)']
+  ];
+  const catBtns = cats.map(([k, label, color]) => {
+    const on = eventCategories.has(k);
+    return `<button class="ef-btn ${on?'active':''}" style="${on?'border-color:'+color+';color:'+color:''}" onclick="toggleEventCat('${k}')">${label}</button>`;
+  }).join('');
+  const allOn = eventCategories.size === 7;
+  const noneOn = eventCategories.size === 0;
+  const toggleAllBtn = `<button class="ef-btn" style="font-size:10px;opacity:0.7" onclick="setAllEventCats(${allOn?'false':'true'})">${allOn?'None':'All'}</button>`;
 
   const orderBtns = [
     ['oldest', 'Oldest First'],
@@ -1318,7 +1333,8 @@ function renderEvents(s) {
 
   return `
     <div class="event-filter-bar">
-      ${filterBtns}
+      ${catBtns}
+      ${toggleAllBtn}
       <div class="ef-sep"></div>
       ${orderBtns}
       <div class="ef-sep"></div>
