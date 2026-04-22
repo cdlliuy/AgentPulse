@@ -277,6 +277,7 @@ let sessions = [], selectedId = null, ws = null, filter = 'all', activeTab = 'ov
 let suppressDetailRefresh = false; // prevent WS refresh from destroying interactive UI state
 const statefulTabs = new Set(['compound', 'cron', 'activity']); // tabs with interactive state that shouldn't auto-refresh
 let globalCronsCache = null; // cache global crons to avoid re-fetch flicker
+const ALL_EVENT_CATS = ['user','remote','agent','mcp','skill','assistant','cron'];
 let eventCategories = new Set(['user','remote','agent','mcp','skill','assistant']); // multi-select categories
 let searchQuery = '', searchResults = null, searchTimer = null;
 let eventOrder = 'oldest'; // 'oldest' | 'newest' — Event Log sort
@@ -836,10 +837,9 @@ function filtered() {
         });
       }
     }
-    matched._matchMap = matchMap;
-    return matched;
+    return { list: matched, matchMap };
   }
-  return list;
+  return { list, matchMap: null };
 }
 
 function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
@@ -882,8 +882,7 @@ function agentIcon(type) {
 
 function renderList() {
   const el = document.getElementById('sessionList');
-  const list = filtered();
-  const matchMap = list._matchMap || null;
+  const { list, matchMap } = filtered();
   if (!list.length) {
     el.innerHTML = searchResults ? '<div class="empty-state">No matching sessions</div>' : '<div class="empty-state">No sessions</div>';
     return;
@@ -1257,8 +1256,7 @@ function toggleEventCat(cat) {
   eventPage = 0; if (selectedId) renderDetail(selectedId);
 }
 function setAllEventCats(on) {
-  const all = ['user','remote','agent','mcp','skill','assistant','cron'];
-  eventCategories = new Set(on ? all : []);
+  eventCategories = new Set(on ? ALL_EVENT_CATS : []);
   eventPage = 0; if (selectedId) renderDetail(selectedId);
 }
 function setEventOrder(o) { eventOrder = o; eventPage = 0; if (selectedId) renderDetail(selectedId); }
@@ -1326,8 +1324,7 @@ function renderEvents(s) {
     const on = eventCategories.has(k);
     return `<button class="ef-btn ${on?'active':''}" style="${on?'border-color:'+color+';color:'+color:''}" onclick="toggleEventCat('${k}')">${label}</button>`;
   }).join('');
-  const allOn = eventCategories.size === 7;
-  const noneOn = eventCategories.size === 0;
+  const allOn = eventCategories.size === ALL_EVENT_CATS.length;
   const toggleAllBtn = `<button class="ef-btn" style="font-size:10px;opacity:0.7" onclick="setAllEventCats(${allOn?'false':'true'})">${allOn?'None':'All'}</button>`;
 
   const orderBtns = [
