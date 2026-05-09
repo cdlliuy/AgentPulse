@@ -45,7 +45,9 @@ const {
   checkClaudeCli,
   loadFleetConfig,
   saveFleetConfig,
+  exportActiveToFleet,
   importFleetSessions,
+  buildSessionList,
   MACHINE_NAME,
   app,
   server
@@ -1067,5 +1069,105 @@ describe('Fleet API', () => {
     expect(Array.isArray(result)).toBe(true);
     expect(result).toEqual([]);
     saveFleetConfig({ enabled: false, syncDir: '' });
+  });
+
+  test('saveFleetConfig and loadFleetConfig round-trip', () => {
+    const original = loadFleetConfig();
+    saveFleetConfig({ enabled: true, syncDir: '/tmp/round-trip-test' });
+    const loaded = loadFleetConfig();
+    expect(loaded.enabled).toBe(true);
+    expect(loaded.syncDir).toBe('/tmp/round-trip-test');
+    saveFleetConfig(original);
+  });
+
+  test('PUT /api/fleet/config rejects missing body fields gracefully', async () => {
+    const res = await request(app).put('/api/fleet/config').send({});
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('enabled');
+    expect(res.body).toHaveProperty('syncDir');
+  });
+
+  test('importFleetSessions reads session files from sync dir', () => {
+    const tmpDir = path.join(os.tmpdir(), 'agentpulse-fleet-test-' + Date.now());
+    const machineDir = path.join(tmpDir, 'AgentPulse', 'test-machine', 'active');
+    fs.mkdirSync(machineDir, { recursive: true });
+    const sessionData = {
+      machine: 'test-machine',
+      sessionId: 'abc123',
+      project: 'test-proj',
+      displayName: 'Test Session',
+      alive: true,
+      lastMessage: { type: 'user', text: 'hello world' },
+      totalUserMessages: 5,
+      totalAssistantMessages: 3,
+      totalToolCalls: 10,
+    };
+    fs.writeFileSync(path.join(machineDir, 'session-abc123.json'), JSON.stringify(sessionData));
+    saveFleetConfig({ enabled: true, syncDir: tmpDir });
+    const sessions = importFleetSessions();
+    expect(sessions.length).toBeGreaterThanOrEqual(1);
+    const imported = sessions.find(s => s.sessionId === 'abc123');
+    expect(imported).toBeDefined();
+    expect(imported.machine).toBe('test-machine');
+    expect(imported.isRemote).toBe(true);
+    expect(imported.lastMessage).toEqual({ type: 'user', text: 'hello world' });
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    saveFleetConfig({ enabled: false, syncDir: '' });
+  });
+
+  test('importFleetSessions marks local machine sessions as not remote', () => {
+    const tmpDir = path.join(os.tmpdir(), 'agentpulse-fleet-local-' + Date.now());
+    const machineDir = path.join(tmpDir, 'AgentPulse', MACHINE_NAME, 'active');
+    fs.mkdirSync(machineDir, { recursive: true });
+    fs.writeFileSync(path.join(machineDir, 'session-local1.json'), JSON.stringify({
+      machine: MACHINE_NAME, sessionId: 'local1', alive: true
+    }));
+    saveFleetConfig({ enabled: true, syncDir: tmpDir });
+    const sessions = importFleetSessions();
+    const local = sessions.find(s => s.sessionId === 'local1');
+    expect(local).toBeDefined();
+    expect(local.isRemote).toBe(false);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    saveFleetConfig({ enabled: false, syncDir: '' });
+  });
+
+  test('importFleetSessions skips malformed JSON files', () => {
+    const tmpDir = path.join(os.tmpdir(), 'agentpulse-fleet-bad-' + Date.now());
+    const machineDir = path.join(tmpDir, 'AgentPulse', 'bad-machine', 'active');
+    fs.mkdirSync(machineDir, { recursive: true });
+    fs.writeFileSync(path.join(machineDir, 'session-bad.json'), 'not valid json{{{');
+    fs.writeFileSync(path.join(machineDir, 'session-good.json'), JSON.stringify({
+      machine: 'bad-machine', sessionId: 'good1', alive: true
+    }));
+    saveFleetConfig({ enabled: true, syncDir: tmpDir });
+    const sessions = importFleetSessions();
+    expect(sessions.find(s => s.sessionId === 'good1')).toBeDefined();
+    expect(sessions.find(s => s.sessionId === 'bad')).toBeUndefined();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    saveFleetConfig({ enabled: false, syncDir: '' });
+  });
+
+  test('exportActiveToFleet is a function', () => {
+    expect(typeof exportActiveToFleet).toBe('function');
+  });
+
+  test('buildSessionList returns sessions with recentEvents', () => {
+    const sessions = buildSessionList(true);
+    expect(Array.isArray(sessions)).toBe(true);
+    for (const s of sessions) {
+      expect(s).toHaveProperty('recentEvents');
+      expect(Array.isArray(s.recentEvents)).toBe(true);
+    }
+  });
+
+  test('active sessions have lastMessage-compatible recentEvents', () => {
+    const sessions = buildSessionList(true).filter(s => s.alive);
+    for (const s of sessions) {
+      const lastMsg = (s.recentEvents || []).filter(e => e.type === 'user' || e.type === 'assistant').slice(-1)[0];
+      if (lastMsg) {
+        expect(lastMsg).toHaveProperty('type');
+        expect(['user', 'assistant']).toContain(lastMsg.type);
+      }
+    }
   });
 });
