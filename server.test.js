@@ -423,6 +423,46 @@ describe('REST API', () => {
     expect(Array.isArray(res.body.projects)).toBe(true);
   });
 
+  test('GET /api/stats activeSessions matches alive count', async () => {
+    const [statsRes, sessionsRes] = await Promise.all([
+      request(app).get('/api/stats'),
+      request(app).get('/api/sessions'),
+    ]);
+    const aliveCount = sessionsRes.body.filter(s => s.alive).length;
+    expect(statsRes.body.activeSessions).toBe(aliveCount);
+  });
+
+  test('all sessions have alive boolean field', async () => {
+    const res = await request(app).get('/api/sessions');
+    for (const s of res.body) {
+      expect(typeof s.alive).toBe('boolean');
+    }
+  });
+
+  test('alive sessions are sorted before dead sessions', async () => {
+    const res = await request(app).get('/api/sessions');
+    const sessions = res.body;
+    if (sessions.length < 2) return;
+    let seenDead = false;
+    for (const s of sessions) {
+      if (!s.alive) seenDead = true;
+      if (seenDead && s.alive) {
+        fail('alive session found after dead session — sort order violated');
+      }
+    }
+  });
+
+  test('active session detail includes expected fields', async () => {
+    const sessionsRes = await request(app).get('/api/sessions');
+    const activeSession = sessionsRes.body.find(s => s.alive);
+    if (!activeSession) return;
+    const res = await request(app).get(`/api/sessions/${activeSession.sessionId}`);
+    expect(res.status).toBe(200);
+    expect(res.body.alive).toBe(true);
+    expect(res.body).toHaveProperty('project');
+    expect(res.body).toHaveProperty('recentEvents');
+  });
+
   test('GET /api/cron-jobs returns array', async () => {
     const res = await request(app).get('/api/cron-jobs');
     expect(res.status).toBe(200);
