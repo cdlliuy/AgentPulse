@@ -1129,6 +1129,7 @@ function renderFleetCards(allSessions) {
           <span class="stat">Tools: <span class="stat-val">${s.totalToolCalls||0}</span></span>
           <span class="stat">Up: <span class="stat-val">${duration}</span></span>
         </div>
+        ${s.lastMessage ? `<div class="active-card-event"><div class="event-label">${s.lastMessage.type === 'user' ? 'Last user message' : 'Last assistant'}</div>${esc((s.lastMessage.text||'').slice(0, 150))}</div>` : ''}
         <div class="active-card-footer">
           <span>${fmtDate(s.lastActivity || s.exportedAt || s.startedAt)}</span>
           ${!isRemote ? `<div class="active-card-actions"><button onclick="event.stopPropagation();switchTopTab('sessions');selectSession('${s.sessionId}')">Details</button><button class="danger" onclick="event.stopPropagation();closeSession('${s.sessionId}','${s.pid}')">Close</button></div>` : ''}

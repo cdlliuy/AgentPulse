@@ -69,6 +69,10 @@ function exportActiveToFleet() {
         totalAssistantMessages: s.totalAssistantMessages,
         alive: true,
         exportedAt: new Date().toISOString(),
+        lastMessage: (() => {
+          const ev = (s.recentEvents || []).filter(e => e.type === 'user' || e.type === 'assistant').slice(-1)[0];
+          return ev ? { type: ev.type, text: (ev.text || '').slice(0, 200) } : null;
+        })(),
       };
       fs.writeFileSync(path.join(dir, `session-${s.sessionId}.json`), JSON.stringify(data, null, 2));
     }
