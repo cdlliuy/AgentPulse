@@ -243,6 +243,18 @@
     .active-card-actions button.danger:hover { border-color: var(--red); color: var(--red); }
     .active-empty { text-align: center; padding: 60px 20px; color: var(--text-dim); }
     .active-empty h3 { font-size: 16px; margin-bottom: 8px; color: var(--text-faint); }
+    .fleet-toggle { margin-left: auto; display: flex; align-items: center; gap: 8px; padding: 0 12px; }
+    .fleet-toggle label { font-size: 11px; color: var(--text-dim); cursor: pointer; }
+    .fleet-toggle select { background: var(--bg-card); color: var(--text-dim); border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer; }
+    .fleet-machine-group { margin-bottom: 16px; }
+    .fleet-machine-header { font-size: 13px; font-weight: 600; color: var(--text-dim); padding: 8px 0 4px; border-bottom: 1px solid var(--border); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    .fleet-machine-header .machine-badge { background: var(--surface2); padding: 2px 8px; border-radius: 10px; font-size: 10px; color: var(--text-faint); }
+    .fleet-machine-header .machine-local { color: var(--green); }
+    .fleet-config-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+    .fleet-config-panel h4 { margin: 0 0 8px; font-size: 13px; color: var(--text); }
+    .fleet-config-panel input[type=text] { background: var(--bg-card); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; font-size: 12px; width: 400px; }
+    .fleet-config-panel button { background: var(--accent); color: #fff; border: none; border-radius: 4px; padding: 4px 12px; font-size: 12px; cursor: pointer; margin-left: 8px; }
+    .fleet-config-panel .fleet-status { font-size: 11px; color: var(--text-dim); margin-top: 6px; }
     .active-summary { display: flex; gap: 20px; margin-bottom: 20px; font-size: 13px; color: var(--text-dim); align-items: center; flex-wrap: wrap; }
     .active-summary .count { font-size: 22px; font-weight: 700; color: var(--green); margin-right: 4px; }
   </style>
@@ -270,6 +282,13 @@
     <div class="top-nav-tab active" onclick="switchTopTab('sessions')" id="top-tab-sessions"><span class="nav-icon">&#9654;</span>Sessions</div>
     <div class="top-nav-tab" onclick="switchTopTab('active')" id="top-tab-active"><span class="nav-icon">&#9889;</span>Active</div>
     <div class="top-nav-tab" onclick="switchTopTab('config')" id="top-tab-config"><span class="nav-icon">&#9881;</span>Settings &amp; Config</div>
+    <div class="fleet-toggle">
+      <label>Mode:</label>
+      <select id="fleetModeSelect" onchange="setFleetMode(this.value)">
+        <option value="local">Local</option>
+        <option value="observer">Observer</option>
+      </select>
+    </div>
   </div>
 
   <!-- Sessions view (existing layout) -->
@@ -317,7 +336,10 @@ let timelineOrder = 'newest'; // 'oldest' | 'newest' — Activity Timeline sort
 let eventPage = 0;
 let activityView = 'table'; // 'timeline' | 'table' — default to curated event log
 const EVENTS_PER_PAGE = 50;
-let currentTopTab = 'sessions'; // 'sessions' | 'config'
+let currentTopTab = 'sessions'; // 'sessions' | 'active' | 'config'
+let fleetMode = 'local'; // 'local' | 'observer'
+let fleetConfig = { enabled: false, syncDir: '', machineName: '' };
+let fleetSessions = [];
 let configCache = null; // cached /api/projects data
 let currentAgent = 'claude-code'; // 'claude-code' | 'github-copilot'
 let agentsList = []; // from /api/agents
@@ -801,7 +823,11 @@ function connectWS() {
   ws.onclose = () => { setConn(false); setTimeout(connectWS, 3000); };
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
-    if (msg.type === 'sessions' && currentAgent === 'claude-code') { sessions = msg.data; refresh(); }
+    if (msg.type === 'sessions' && currentAgent === 'claude-code') {
+      sessions = msg.data;
+      refresh();
+      if (fleetMode === 'observer') fetchFleetSessions();
+    }
   };
 }
 
@@ -962,6 +988,15 @@ function renderList() {
 
 function renderActiveDashboard() {
   const el = document.getElementById('activeDashboard');
+  if (fleetMode === 'observer') {
+    const allSessions = fleetSessions.length ? fleetSessions : sessions.filter(s => s.alive);
+    if (!allSessions.length) {
+      el.innerHTML = '<div class="active-empty"><h3>No active sessions</h3><p>Configure Fleet sync to see sessions from other machines.</p></div>';
+      return;
+    }
+    el.innerHTML = renderFleetCards(allSessions);
+    return;
+  }
   const activeSessions = sessions.filter(s => s.alive);
   if (!activeSessions.length) {
     el.innerHTML = '<div class="active-empty"><h3>No active sessions</h3><p>All sessions are completed or idle.</p></div>';
@@ -1009,6 +1044,100 @@ function renderActiveDashboard() {
   }
   html += '</div>';
   el.innerHTML = html;
+}
+
+function setFleetMode(mode) {
+  fleetMode = mode;
+  document.getElementById('fleetModeSelect').value = mode;
+  if (mode === 'observer') {
+    switchTopTab('active');
+    document.getElementById('top-tab-sessions').style.display = 'none';
+    document.getElementById('top-tab-config').style.display = 'none';
+    loadFleetConfig();
+    fetchFleetSessions();
+  } else {
+    document.getElementById('top-tab-sessions').style.display = '';
+    document.getElementById('top-tab-config').style.display = '';
+    renderActiveDashboard();
+  }
+}
+
+async function loadFleetConfig() {
+  try {
+    const res = await fetch('/api/fleet/config');
+    fleetConfig = await res.json();
+  } catch {}
+}
+
+async function saveFleetConfigUI() {
+  const syncDir = document.getElementById('fleetSyncDir').value;
+  const enabled = document.getElementById('fleetEnabled').checked;
+  try {
+    const res = await fetch('/api/fleet/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled, syncDir })
+    });
+    fleetConfig = await res.json();
+    fetchFleetSessions();
+    renderActiveDashboard();
+  } catch {}
+}
+
+async function fetchFleetSessions() {
+  try {
+    const res = await fetch('/api/fleet/sessions');
+    fleetSessions = await res.json();
+    if (currentTopTab === 'active') renderActiveDashboard();
+  } catch {}
+}
+
+function renderFleetCards(allSessions) {
+  const machineGroups = {};
+  for (const s of allSessions) {
+    const m = s.machine || fleetConfig.machineName || 'Unknown';
+    (machineGroups[m] = machineGroups[m] || []).push(s);
+  }
+  let html = `<div class="active-summary"><span><span class="count">${allSessions.length}</span> active session${allSessions.length>1?'s':''}</span>`;
+  html += `<span>${Object.keys(machineGroups).length} machine${Object.keys(machineGroups).length>1?'s':''}</span></div>`;
+  if (!fleetConfig.enabled) {
+    html += `<div class="fleet-config-panel"><h4>Fleet Sync Setup</h4>`;
+    html += `<label><input type="checkbox" id="fleetEnabled" ${fleetConfig.enabled?'checked':''}> Enable Fleet Sync</label><br>`;
+    html += `<div style="margin-top:8px"><input type="text" id="fleetSyncDir" value="${esc(fleetConfig.syncDir || '')}" placeholder="OneDrive sync directory path">`;
+    html += `<button onclick="saveFleetConfigUI()">Save</button></div>`;
+    html += `<div class="fleet-status">Machine: ${esc(fleetConfig.machineName)}</div></div>`;
+  }
+  for (const [machine, mSessions] of Object.entries(machineGroups)) {
+    const isLocal = machine === fleetConfig.machineName;
+    html += `<div class="fleet-machine-group">`;
+    html += `<div class="fleet-machine-header"><span>${esc(machine)}</span><span class="machine-badge ${isLocal?'machine-local':''}">${isLocal?'local':'remote'}</span><span class="machine-badge">${mSessions.length} session${mSessions.length>1?'s':''}</span></div>`;
+    html += '<div class="active-grid">';
+    for (const s of mSessions) {
+      const proj = s.project ? s.project.split('--').pop() : '';
+      const duration = s.startedAt ? timeAgo(s.startedAt) : '';
+      const isRemote = s.isRemote;
+      html += `
+      <div class="active-card" ${!isRemote ? `onclick="switchTopTab('sessions');selectSession('${s.sessionId}')"` : ''} style="${isRemote?'cursor:default':''}" >
+        <div class="active-card-header">
+          <span class="status-dot alive"></span>
+          <span class="active-card-title">${esc(s.displayName || s.sessionId.slice(0,8))}</span>
+          ${s.entrypoint ? epBadge(s.entrypoint) : ''}
+        </div>
+        <div class="active-card-project">${esc(proj)}</div>
+        <div class="active-card-stats">
+          <span class="stat">Msgs: <span class="stat-val">${(s.totalUserMessages||0) + (s.totalAssistantMessages||0)}</span></span>
+          <span class="stat">Tools: <span class="stat-val">${s.totalToolCalls||0}</span></span>
+          <span class="stat">Up: <span class="stat-val">${duration}</span></span>
+        </div>
+        <div class="active-card-footer">
+          <span>${fmtDate(s.lastActivity || s.exportedAt || s.startedAt)}</span>
+          ${!isRemote ? `<div class="active-card-actions"><button onclick="event.stopPropagation();switchTopTab('sessions');selectSession('${s.sessionId}')">Details</button><button class="danger" onclick="event.stopPropagation();closeSession('${s.sessionId}','${s.pid}')">Close</button></div>` : ''}
+        </div>
+      </div>`;
+    }
+    html += '</div></div>';
+  }
+  return html;
 }
 
 async function selectSession(id) {
@@ -1738,6 +1867,7 @@ function renderCron(s) {
 // Boot
 loadAgents();
 connectWS();
+loadFleetConfig();
 fetch('/api/claude-cli-status').then(r=>r.json()).then(d => { window._claudeCliStatus = d; }).catch(()=>{});
 fetch('/api/sessions').then(r=>r.json()).then(data => {
   sessions = data; refresh();

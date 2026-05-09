@@ -28,6 +28,86 @@ const WS_PUSH_INTERVAL_MS = 5000;
 const WS_MAX_SESSIONS = 30;
 const AI_SUMMARY_CACHE_TTL_MS = 600000; // 10 min
 
+// ── Fleet (multi-machine sync via OneDrive) ────────────
+const FLEET_CONFIG_FILE = path.join(CLAUDE_DIR, 'agentpulse-fleet.json');
+const MACHINE_NAME = os.hostname();
+
+function loadFleetConfig() {
+  try { return JSON.parse(fs.readFileSync(FLEET_CONFIG_FILE, 'utf8')); }
+  catch { return { enabled: false, syncDir: '' }; }
+}
+
+function saveFleetConfig(cfg) {
+  fs.writeFileSync(FLEET_CONFIG_FILE, JSON.stringify(cfg, null, 2));
+}
+
+function getFleetActiveDir() {
+  const cfg = loadFleetConfig();
+  if (!cfg.enabled || !cfg.syncDir) return null;
+  return path.join(cfg.syncDir, 'AgentPulse', MACHINE_NAME, 'active');
+}
+
+function exportActiveToFleet() {
+  const dir = getFleetActiveDir();
+  if (!dir) return;
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const sessions = buildSessionList(true).filter(s => s.alive);
+    const activeIds = new Set(sessions.map(s => s.sessionId));
+    // Write active session files
+    for (const s of sessions) {
+      const data = {
+        machine: MACHINE_NAME,
+        sessionId: s.sessionId,
+        project: s.project,
+        displayName: s.displayName,
+        entrypoint: s.entrypoint,
+        startedAt: s.startedAt,
+        lastActivity: s.lastActivity,
+        totalUserMessages: s.totalUserMessages,
+        totalToolCalls: s.totalToolCalls,
+        totalAssistantMessages: s.totalAssistantMessages,
+        alive: true,
+        exportedAt: new Date().toISOString(),
+      };
+      fs.writeFileSync(path.join(dir, `session-${s.sessionId}.json`), JSON.stringify(data, null, 2));
+    }
+    // Remove files for sessions no longer active
+    try {
+      for (const f of fs.readdirSync(dir)) {
+        if (f.startsWith('session-') && f.endsWith('.json')) {
+          const id = f.slice(8, -5);
+          if (!activeIds.has(id)) fs.unlinkSync(path.join(dir, f));
+        }
+      }
+    } catch {}
+  } catch {}
+}
+
+function importFleetSessions() {
+  const cfg = loadFleetConfig();
+  if (!cfg.enabled || !cfg.syncDir) return [];
+  const baseDir = path.join(cfg.syncDir, 'AgentPulse');
+  const results = [];
+  try {
+    for (const machine of fs.readdirSync(baseDir)) {
+      const activeDir = path.join(baseDir, machine, 'active');
+      if (!fs.existsSync(activeDir)) continue;
+      try {
+        for (const f of fs.readdirSync(activeDir)) {
+          if (!f.endsWith('.json')) continue;
+          try {
+            const data = JSON.parse(fs.readFileSync(path.join(activeDir, f), 'utf8'));
+            data.isRemote = data.machine !== MACHINE_NAME;
+            results.push(data);
+          } catch {}
+        }
+      } catch {}
+    }
+  } catch {}
+  return results;
+}
+
 // ── Truncation Limits ─────────────────────────────────
 const T = {
   TIMELINE: 1024,     // user/assistant/cron event text
@@ -1328,6 +1408,7 @@ wss.on('connection', (ws) => {
       // Only send active sessions + recent 20 historical for live updates
       const active = buildSessionList(true).slice(0, WS_MAX_SESSIONS);
       ws.send(JSON.stringify({ type: 'sessions', data: active }));
+      exportActiveToFleet();
     }
   };
   sendUpdate();
@@ -1650,6 +1731,28 @@ app.get('/api/copilot/settings', (req, res) => {
   res.json(buildCopilotSettings());
 });
 
+// GET /api/fleet/config — get fleet sync configuration
+app.get('/api/fleet/config', (req, res) => {
+  const cfg = loadFleetConfig();
+  res.json({ ...cfg, machineName: MACHINE_NAME });
+});
+
+// PUT /api/fleet/config — update fleet sync configuration
+app.put('/api/fleet/config', (req, res) => {
+  const { enabled, syncDir } = req.body;
+  const cfg = loadFleetConfig();
+  if (typeof enabled === 'boolean') cfg.enabled = enabled;
+  if (typeof syncDir === 'string') cfg.syncDir = syncDir;
+  saveFleetConfig(cfg);
+  if (cfg.enabled) exportActiveToFleet();
+  res.json({ ...cfg, machineName: MACHINE_NAME });
+});
+
+// GET /api/fleet/sessions — get all fleet-wide active sessions
+app.get('/api/fleet/sessions', (req, res) => {
+  res.json(importFleetSessions());
+});
+
 // GET /api/agents — returns list of available AI agents with status
 app.get('/api/agents', (req, res) => {
   const claudeSessions = buildSessionList(true);
@@ -1703,6 +1806,11 @@ module.exports = {
   discoverProjectWorkDirs,
   readCommandFiles,
   checkClaudeCli,
+  loadFleetConfig,
+  saveFleetConfig,
+  exportActiveToFleet,
+  importFleetSessions,
+  MACHINE_NAME,
   app,
   server,
   PORT

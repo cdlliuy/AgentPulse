@@ -43,6 +43,10 @@ const {
   buildCopilotSessionList,
   buildCopilotSettings,
   checkClaudeCli,
+  loadFleetConfig,
+  saveFleetConfig,
+  importFleetSessions,
+  MACHINE_NAME,
   app,
   server
 } = require('./server');
@@ -1015,5 +1019,53 @@ describe('REST API — additional endpoints', () => {
     expect(res.body).toHaveProperty('available');
     // checkedAt should be recent
     expect(Date.now() - res.body.checkedAt).toBeLessThan(5000);
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+// Fleet API tests
+// ═══════════════════════════════════════════════════════
+
+describe('Fleet API', () => {
+  test('GET /api/fleet/config returns config with machineName', async () => {
+    const res = await request(app).get('/api/fleet/config');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('machineName');
+    expect(res.body).toHaveProperty('enabled');
+    expect(typeof res.body.machineName).toBe('string');
+  });
+
+  test('PUT /api/fleet/config updates config', async () => {
+    const res = await request(app).put('/api/fleet/config')
+      .send({ enabled: false, syncDir: '/tmp/test-fleet' });
+    expect(res.status).toBe(200);
+    expect(res.body.syncDir).toBe('/tmp/test-fleet');
+    expect(res.body.enabled).toBe(false);
+    expect(res.body.machineName).toBe(MACHINE_NAME);
+  });
+
+  test('GET /api/fleet/sessions returns array', async () => {
+    const res = await request(app).get('/api/fleet/sessions');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+  });
+
+  test('loadFleetConfig returns defaults when no config file', () => {
+    const cfg = loadFleetConfig();
+    expect(cfg).toHaveProperty('enabled');
+    expect(cfg).toHaveProperty('syncDir');
+  });
+
+  test('importFleetSessions returns empty when disabled', () => {
+    saveFleetConfig({ enabled: false, syncDir: '' });
+    expect(importFleetSessions()).toEqual([]);
+  });
+
+  test('importFleetSessions returns empty for nonexistent syncDir', () => {
+    saveFleetConfig({ enabled: true, syncDir: '/nonexistent/path/fleet' });
+    const result = importFleetSessions();
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toEqual([]);
+    saveFleetConfig({ enabled: false, syncDir: '' });
   });
 });
