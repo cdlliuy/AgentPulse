@@ -12,7 +12,7 @@
  *   node scripts/take-screenshots.js [options]
  *
  * Options:
- *   --view <name>     Capture specific view: sessions, detail, eventlog, agents, settings, all (default: all)
+ *   --view <name>     Capture specific view: sessions, detail, eventlog, agents, active, settings, all (default: all)
  *   --session <id>    Capture a specific session by ID (default: first available)
  *   --list            List all available sessions and exit
  *   --mask            Enable sensitive content masking (for public screenshots)
@@ -268,7 +268,7 @@ async function main() {
   await page.setViewport({ width: WIDTH, height: HEIGHT });
 
   const viewNames = VIEW === 'all'
-    ? ['sessions', 'detail', 'eventlog', 'agents', 'settings']
+    ? ['sessions', 'detail', 'eventlog', 'agents', 'active', 'settings']
     : [VIEW];
 
   const mode = MASK ? 'masked (public)' : 'unmasked (dev)';
@@ -366,8 +366,18 @@ async function main() {
         break;
       }
 
+      case 'active': {
+        console.log('  Capturing: Active Dashboard...');
+        await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        await delay(4000);
+        await page.evaluate(() => { switchTopTab('active'); });
+        await delay(2000);
+        inSessionDetail = false;
+        break;
+      }
+
       default:
-        console.error(`  Unknown view: ${name}. Available: sessions, detail, eventlog, agents, settings, all`);
+        console.error(`  Unknown view: ${name}. Available: sessions, detail, eventlog, agents, active, settings, all`);
         continue;
     }
 
