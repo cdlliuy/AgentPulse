@@ -34,6 +34,7 @@ const AI_SUMMARY_CACHE_TTL_MS = 600000; // 10 min
 // ── Fleet (multi-machine sync via OneDrive) ────────────
 const FLEET_CONFIG_FILE = path.join(__dirname, 'fleet-config.json');
 const MACHINE_NAME = os.hostname();
+let lastFleetSyncAt = 0;
 
 function loadFleetConfig() {
   try { return JSON.parse(fs.readFileSync(FLEET_CONFIG_FILE, 'utf8')); }
@@ -94,6 +95,7 @@ function exportActiveToFleet() {
     } catch {}
   } catch {}
   processObserverCommands();
+  lastFleetSyncAt = Date.now();
 }
 
 function writeObserverCommand(sessionId, fields) {
@@ -1886,7 +1888,8 @@ app.get('/api/fleet/config', (req, res) => {
       try { if (fs.statSync(p).isDirectory()) { suggestedDir = p; break; } } catch {}
     }
   }
-  res.json({ ...cfg, machineName: MACHINE_NAME, suggestedDir, username: os.userInfo().username });
+  const nextSyncAt = lastFleetSyncAt ? new Date(lastFleetSyncAt + FLEET_SYNC_INTERVAL_MS).toISOString() : null;
+  res.json({ ...cfg, machineName: MACHINE_NAME, suggestedDir, username: os.userInfo().username, nextSyncAt, syncIntervalMs: FLEET_SYNC_INTERVAL_MS });
 });
 
 // PUT /api/fleet/config — update fleet sync configuration

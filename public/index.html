@@ -1019,7 +1019,13 @@ function renderFleetConfigBar() {
   h += '<span id="fleetSaveStatus" style="font-size:11px"></span>';
   h += '</div>';
   if (fleetConfig.enabled) {
-    h += '<div style="margin-top:6px;font-size:10px;color:var(--text-faint)">Machine: <strong style="color:var(--text-dim)">' + esc(fleetConfig.machineName || '?') + '</strong> · Sync: <code>' + esc(fleetDir + '/AgentPulse/' + (fleetConfig.machineName || '')) + '</code></div>';
+    let syncInfo = 'Machine: <strong style="color:var(--text-dim)">' + esc(fleetConfig.machineName || '?') + '</strong> · Sync: <code>' + esc(fleetDir + '/AgentPulse/' + (fleetConfig.machineName || '')) + '</code>';
+    if (fleetConfig.nextSyncAt) {
+      const diff = Math.max(0, Math.round((new Date(fleetConfig.nextSyncAt).getTime() - Date.now()) / 1000));
+      const mm = Math.floor(diff / 60), ss = diff % 60;
+      syncInfo += ' · Next sync: <strong style="color:var(--accent)" id="fleetNextSync">' + mm + ':' + String(ss).padStart(2,'0') + '</strong>';
+    }
+    h += '<div style="margin-top:6px;font-size:10px;color:var(--text-faint)">' + syncInfo + '</div>';
   }
   h += '</div>';
   return h;
@@ -1121,6 +1127,14 @@ async function loadFleetConfig() {
     fleetConfig = await res.json();
   } catch {}
 }
+
+setInterval(() => {
+  const el = document.getElementById('fleetNextSync');
+  if (!el || !fleetConfig.nextSyncAt) return;
+  const diff = Math.max(0, Math.round((new Date(fleetConfig.nextSyncAt).getTime() - Date.now()) / 1000));
+  const mm = Math.floor(diff / 60), ss = diff % 60;
+  el.textContent = mm + ':' + String(ss).padStart(2, '0');
+}, 1000);
 
 async function updateFleetFromSettings() {
   const syncDir = document.getElementById('settingsFleetSyncDir').value;
