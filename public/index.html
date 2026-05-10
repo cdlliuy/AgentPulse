@@ -1128,10 +1128,16 @@ async function loadFleetConfig() {
   } catch {}
 }
 
-setInterval(() => {
+setInterval(async () => {
   const el = document.getElementById('fleetNextSync');
   if (!el || !fleetConfig.nextSyncAt) return;
   const diff = Math.max(0, Math.round((new Date(fleetConfig.nextSyncAt).getTime() - Date.now()) / 1000));
+  if (diff <= 0) {
+    const prev = fleetConfig.nextSyncAt;
+    await loadFleetConfig();
+    if (fleetConfig.nextSyncAt !== prev) renderFleetConfigBar();
+    return;
+  }
   const mm = Math.floor(diff / 60), ss = diff % 60;
   el.textContent = mm + ':' + String(ss).padStart(2, '0');
 }, 1000);
