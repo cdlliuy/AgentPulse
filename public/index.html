@@ -836,6 +836,7 @@ function connectWS() {
     const msg = JSON.parse(e.data);
     if (msg.type === 'sessions' && currentAgent === 'claude-code') {
       sessions = msg.data;
+      if (msg.stars) sessionStars = msg.stars;
       refresh();
       if (fleetMode === 'observer') fetchFleetSessions();
     }

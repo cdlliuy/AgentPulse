@@ -1528,7 +1528,7 @@ wss.on('connection', (ws) => {
     if (ws.readyState === ws.OPEN) {
       // Only send active sessions + recent 20 historical for live updates
       const active = buildSessionList(true).slice(0, WS_MAX_SESSIONS);
-      ws.send(JSON.stringify({ type: 'sessions', data: active }));
+      ws.send(JSON.stringify({ type: 'sessions', data: active, stars: loadSessionStars() }));
     }
   };
   sendUpdate();
