@@ -1084,6 +1084,24 @@ describe('Fleet API', () => {
     saveFleetConfig(original);
   });
 
+  test('PUT /api/fleet/config updates defaultMode', async () => {
+    const res = await request(app).put('/api/fleet/config')
+      .send({ defaultMode: 'observer' });
+    expect(res.status).toBe(200);
+    expect(res.body.defaultMode).toBe('observer');
+    const res2 = await request(app).put('/api/fleet/config')
+      .send({ defaultMode: 'local' });
+    expect(res2.body.defaultMode).toBe('local');
+  });
+
+  test('PUT /api/fleet/config rejects invalid defaultMode', async () => {
+    const before = (await request(app).get('/api/fleet/config')).body.defaultMode;
+    const res = await request(app).put('/api/fleet/config')
+      .send({ defaultMode: 'invalid' });
+    expect(res.status).toBe(200);
+    expect(res.body.defaultMode).toBe(before);
+  });
+
   test('PUT /api/fleet/config rejects missing body fields gracefully', async () => {
     const res = await request(app).put('/api/fleet/config').send({});
     expect(res.status).toBe(200);
