@@ -496,7 +496,7 @@ function renderConfigPage() {
   html += '<div id="cfg-fleet-sync" style="display:none" class="settings-body">';
   html += '<div style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Sync active sessions across machines via a shared directory (e.g. OneDrive). Other machines running AgentPulse in Observer mode will see your sessions.</div>';
   html += '<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:4px">Sync Directory</label>';
-  html += '<div style="display:flex;gap:8px"><input type="text" id="settingsFleetSyncDir" value="' + esc(fleetDir) + '" placeholder="e.g. C:\\Users\\you\\OneDrive" style="background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;flex:1;min-width:300px">';
+  html += '<div style="display:flex;gap:8px"><input type="text" id="settingsFleetSyncDir" value="' + esc(fleetDir) + '" placeholder="e.g. C:\\Users\\' + esc(fleetConfig.username || 'you') + '\\OneDrive" style="background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;flex:1;min-width:300px">';
   html += '<button onclick="updateFleetFromSettings()" style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:4px 12px;font-size:12px;cursor:pointer">Save</button></div></div>';
   html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><label style="font-size:12px;color:var(--text)"><input type="checkbox" id="settingsFleetEnabled" ' + (fleetConfig.enabled ? 'checked' : '') + ' onchange="updateFleetFromSettings()"> Enable sync</label></div>';
   html += '<div id="fleetSaveStatus" style="font-size:11px;margin-bottom:8px"></div>';

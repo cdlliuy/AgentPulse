@@ -1782,7 +1782,7 @@ app.get('/api/fleet/config', (req, res) => {
       try { if (fs.statSync(p).isDirectory()) { suggestedDir = p; break; } } catch {}
     }
   }
-  res.json({ ...cfg, machineName: MACHINE_NAME, suggestedDir });
+  res.json({ ...cfg, machineName: MACHINE_NAME, suggestedDir, username: os.userInfo().username });
 });
 
 // PUT /api/fleet/config — update fleet sync configuration
