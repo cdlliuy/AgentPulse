@@ -31,7 +31,7 @@ const WS_MAX_SESSIONS = 30;
 const AI_SUMMARY_CACHE_TTL_MS = 600000; // 10 min
 
 // ── Fleet (multi-machine sync via OneDrive) ────────────
-const FLEET_CONFIG_FILE = path.join(CLAUDE_DIR, 'agentpulse-fleet.json');
+const FLEET_CONFIG_FILE = path.join(__dirname, 'fleet-config.json');
 const MACHINE_NAME = os.hostname();
 
 function loadFleetConfig() {
