@@ -27,7 +27,7 @@ const COPILOT_CONFIG = path.join(COPILOT_DIR, 'config.json');
 const COPILOT_AGENTS_DIR = path.join(COPILOT_DIR, 'agents');
 
 const WS_PUSH_INTERVAL_MS = 5000;
-const FLEET_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+const FLEET_SYNC_INTERVAL_MS = 1 * 60 * 1000;
 const WS_MAX_SESSIONS = 30;
 const AI_SUMMARY_CACHE_TTL_MS = 600000; // 10 min
 
@@ -81,7 +81,12 @@ function exportActiveToFleet() {
           return ev ? { type: ev.type, text: (ev.text || '').slice(0, 200) } : null;
         })(),
       };
-      fs.writeFileSync(path.join(dir, `session-${s.sessionId}.json`), JSON.stringify(data, null, 2));
+      const filePath = path.join(dir, `session-${s.sessionId}.json`);
+      try {
+        const existing = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        if (existing.requestClose) data.requestClose = true;
+      } catch {}
+      fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
     }
     // Remove files for sessions no longer active
     try {
