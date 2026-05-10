@@ -10,4 +10,12 @@ take-screenshots.js
 record-demo.js
 demo-frames/
 screenshot-*.png
+devtest-*.png
 demo.gif
+slides/
+.claude/
+.connect-writer/
+scripts/
+fleet-config.json
+session-notes.json
+session-stars.json
