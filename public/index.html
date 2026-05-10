@@ -231,12 +231,16 @@
     .active-card-header .status-dot { width: 10px; height: 10px; flex-shrink: 0; }
     .active-card-title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
     .active-card-project { font-size: 11px; color: var(--cyan); background: #39d2c015; padding: 2px 8px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .active-card-branch { font-size: 11px; color: #58a6ff; font-family: monospace; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .active-card-note { font-size: 11px; color: var(--text-dim); margin-top: 6px; padding: 4px 8px; background: var(--bg-card); border: 1px dashed var(--border); border-radius: 4px; cursor: pointer; min-height: 20px; }
+    .active-card-note:hover { border-color: var(--cyan); }
+    .note-placeholder { color: var(--text-faint); font-style: italic; }
     .active-card-stats { display: flex; gap: 12px; font-size: 11px; color: var(--text-dim); margin-bottom: 8px; flex-wrap: wrap; }
     .active-card-stats .stat { display: flex; align-items: center; gap: 3px; }
     .active-card-stats .stat-val { color: var(--text); font-weight: 600; }
     .active-card-event { font-size: 12px; color: var(--text-dim); background: var(--bg); border-radius: 6px; padding: 8px 10px; margin-top: 8px; max-height: 60px; overflow: hidden; line-height: 1.4; }
-    .active-card-event .event-label { font-size: 10px; color: var(--text-faint); text-transform: uppercase; margin-bottom: 2px; }
-    .active-card-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 10px; color: var(--text-faint); }
+    .active-card-event .event-label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 2px; }
+    .active-card-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 11px; color: var(--text-dim); }
     .active-card-actions { display: flex; gap: 6px; }
     .active-card-actions button { background: var(--surface2); border: 1px solid var(--border); color: var(--text-dim); padding: 3px 10px; border-radius: 4px; cursor: pointer; font-size: 10px; }
     .active-card-actions button:hover { border-color: var(--text-dim); color: var(--text); }
@@ -279,8 +283,8 @@
     <!-- Main content area -->
     <div class="app-main">
   <div class="top-nav">
-    <div class="top-nav-tab active" onclick="switchTopTab('sessions')" id="top-tab-sessions"><span class="nav-icon">&#9654;</span>Sessions</div>
-    <div class="top-nav-tab" onclick="switchTopTab('active')" id="top-tab-active"><span class="nav-icon">&#9889;</span>Active</div>
+    <div class="top-nav-tab active" onclick="switchTopTab('active')" id="top-tab-active"><span class="nav-icon">&#9889;</span>Active</div>
+    <div class="top-nav-tab" onclick="switchTopTab('sessions')" id="top-tab-sessions"><span class="nav-icon">&#9654;</span>Sessions</div>
     <div class="top-nav-tab" onclick="switchTopTab('config')" id="top-tab-config"><span class="nav-icon">&#9881;</span>Settings &amp; Config</div>
     <div class="fleet-toggle">
       <label>Mode:</label>
@@ -292,7 +296,7 @@
   </div>
 
   <!-- Sessions view (existing layout) -->
-  <div id="view-sessions">
+  <div id="view-sessions" style="display:none">
     <div class="filter-bar">
       <button class="active" onclick="setFilter('all')">All</button>
       <button onclick="setFilter('active')">Active Only</button>
@@ -308,7 +312,7 @@
   </div>
 
   <!-- Active Dashboard view -->
-  <div id="view-active" style="display:none">
+  <div id="view-active">>
     <div class="active-dashboard" id="activeDashboard">
       <div class="active-empty"><h3>Loading active sessions...</h3></div>
     </div>
@@ -336,7 +340,7 @@ let timelineOrder = 'newest'; // 'oldest' | 'newest' — Activity Timeline sort
 let eventPage = 0;
 let activityView = 'table'; // 'timeline' | 'table' — default to curated event log
 const EVENTS_PER_PAGE = 50;
-let currentTopTab = 'sessions'; // 'sessions' | 'active' | 'config'
+let currentTopTab = 'active'; // 'sessions' | 'active' | 'config'
 let fleetMode = 'local'; // 'local' | 'observer'
 let fleetConfig = { enabled: false, syncDir: '', machineName: '' };
 let fleetSessions = [];
@@ -927,6 +931,15 @@ function fmtDate(ts) {
   const d = typeof ts === 'number' ? new Date(ts) : new Date(ts);
   return d.toLocaleDateString('en-US', {month:'short',day:'numeric'}) + ' ' + d.toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'});
 }
+function timeAgoLong(ts) {
+  if (!ts) return '';
+  const diff = Date.now() - (typeof ts === 'number' ? ts : new Date(ts).getTime());
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) { const m = Math.floor(diff/60000); return m + ' min ago'; }
+  if (diff < 86400000) { const h = Math.floor(diff/3600000); return h + 'h ago'; }
+  const d = Math.floor(diff/86400000);
+  return d + 'd ago';
+}
 function shortPath(p) {
   if (!p) return '';
   const parts = p.replace(/\\/g,'/').split('/');
@@ -1025,6 +1038,7 @@ function renderActiveDashboard() {
         ${epBadge(s.entrypoint)}
       </div>
       <div class="active-card-project">${esc(proj)}</div>
+      ${s.gitBranch ? `<div class="active-card-branch">⎇ ${esc(s.gitBranch)}</div>` : ''}
       <div class="active-card-stats">
         <span class="stat">Msgs: <span class="stat-val">${s.totalUserMessages + s.totalAssistantMessages}</span></span>
         <span class="stat">Tools: <span class="stat-val">${s.totalToolCalls}</span></span>
@@ -1033,8 +1047,9 @@ function renderActiveDashboard() {
         <span class="stat">Up: <span class="stat-val">${duration}</span></span>
       </div>
       ${lastEventText ? `<div class="active-card-event"><div class="event-label">${lastEvent.type === 'user' ? 'Last user message' : 'Last assistant'}</div>${esc(lastEventText.slice(0, 150))}</div>` : ''}
+      <div class="active-card-note" onclick="event.stopPropagation();editSessionNote('${s.sessionId}')">${s.note ? esc(s.note) : '<span class="note-placeholder">+ Add note</span>'}</div>
       <div class="active-card-footer">
-        <span>${fmtDate(s.lastActivity || s.startedAt)}</span>
+        <span>${fmtDate(s.lastActivity || s.startedAt)} · ${timeAgoLong(s.lastActivity || s.startedAt)}</span>
         <div class="active-card-actions">
           <button onclick="event.stopPropagation();switchTopTab('sessions');selectSession('${s.sessionId}')">Details</button>
           <button class="danger" onclick="event.stopPropagation();closeSession('${s.sessionId}','${s.pid}')">Close</button>
@@ -1124,14 +1139,16 @@ function renderFleetCards(allSessions) {
           ${s.entrypoint ? epBadge(s.entrypoint) : ''}
         </div>
         <div class="active-card-project">${esc(proj)}</div>
+        ${s.gitBranch ? `<div class="active-card-branch">⎇ ${esc(s.gitBranch)}</div>` : ''}
         <div class="active-card-stats">
           <span class="stat">Msgs: <span class="stat-val">${(s.totalUserMessages||0) + (s.totalAssistantMessages||0)}</span></span>
           <span class="stat">Tools: <span class="stat-val">${s.totalToolCalls||0}</span></span>
           <span class="stat">Up: <span class="stat-val">${duration}</span></span>
         </div>
         ${s.lastMessage ? `<div class="active-card-event"><div class="event-label">${s.lastMessage.type === 'user' ? 'Last user message' : 'Last assistant'}</div>${esc((s.lastMessage.text||'').slice(0, 150))}</div>` : ''}
+        <div class="active-card-note" onclick="event.stopPropagation();editSessionNote('${s.sessionId}')">${s.note ? esc(s.note) : '<span class="note-placeholder">+ Add note</span>'}</div>
         <div class="active-card-footer">
-          <span>${fmtDate(s.lastActivity || s.exportedAt || s.startedAt)}</span>
+          <span>${fmtDate(s.lastActivity || s.exportedAt || s.startedAt)} · ${timeAgoLong(s.lastActivity || s.exportedAt || s.startedAt)}</span>
           ${!isRemote ? `<div class="active-card-actions"><button onclick="event.stopPropagation();switchTopTab('sessions');selectSession('${s.sessionId}')">Details</button><button class="danger" onclick="event.stopPropagation();closeSession('${s.sessionId}','${s.pid}')">Close</button></div>` : ''}
         </div>
       </div>`;
@@ -1178,6 +1195,17 @@ async function renameSession(sessionId, name) {
   } catch (e) {
     console.error('Rename failed:', e);
   }
+}
+
+async function editSessionNote(sessionId) {
+  const current = (sessions.concat(fleetSessions || [])).find(s => s.sessionId === sessionId)?.note || '';
+  const note = prompt('Session note:', current);
+  if (note === null) return;
+  await fetch('/api/sessions/' + sessionId + '/note', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note })
+  });
+  fetchActiveSessions();
 }
 
 async function closeSession(sessionId, pid) {

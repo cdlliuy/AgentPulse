@@ -13,6 +13,7 @@ const CLAUDE_DIR = path.join(os.homedir(), '.claude');
 const SESSIONS_DIR = path.join(CLAUDE_DIR, 'sessions');
 const PROJECTS_DIR = path.join(CLAUDE_DIR, 'projects');
 const SESSION_NAMES_FILE = path.join(__dirname, 'session-names.json');
+const SESSION_NOTES_FILE = path.join(__dirname, 'session-notes.json');
 const AI_SUMMARIES_DIR = path.join(CLAUDE_DIR, 'claude-code-dashboard');
 const AI_SUMMARIES_FILE = path.join(AI_SUMMARIES_DIR, 'ai-summaries.json');
 const GLOBAL_CLAUDE_JSON = path.join(os.homedir(), '.claude.json');
@@ -68,6 +69,8 @@ function exportActiveToFleet() {
         totalToolCalls: s.totalToolCalls,
         totalAssistantMessages: s.totalAssistantMessages,
         alive: true,
+        gitBranch: s.gitBranch || null,
+        note: s.note || null,
         exportedAt: new Date().toISOString(),
         lastMessage: (() => {
           const ev = (s.recentEvents || []).filter(e => e.type === 'user' || e.type === 'assistant').slice(-1)[0];
@@ -185,6 +188,13 @@ function loadSessionNames() {
 
 function saveSessionNames(names) {
   fs.writeFileSync(SESSION_NAMES_FILE, JSON.stringify(names, null, 2), 'utf8');
+}
+
+function loadSessionNotes() {
+  try { return JSON.parse(fs.readFileSync(SESSION_NOTES_FILE, 'utf8')); } catch { return {}; }
+}
+function saveSessionNotes(notes) {
+  fs.writeFileSync(SESSION_NOTES_FILE, JSON.stringify(notes, null, 2), 'utf8');
 }
 
 /** Generate a suggested name for a session based on its content */
@@ -674,14 +684,19 @@ function buildSessionList(includeHistorical = true) {
     }
   }
 
+  for (const s of results) {
+    s.gitBranch = s.alive ? getGitBranch(s.cwd) : null;
+  }
+
   // Sort: alive first, then by last activity desc
   sortByActivity(results);
 
   // Merge custom session names + generate suggestions + attach AI summaries
   const names = loadSessionNames();
+  const notes = loadSessionNotes();
   for (const s of results) {
     s.customName = names[s.sessionId] || null;
-    // Also use AI summary brief name as a display name fallback
+    s.note = notes[s.sessionId] || null;
     const cachedSummary = aiSummaryCache.get(s.sessionId);
     if (cachedSummary) {
       s.aiSummary = cachedSummary;
@@ -714,6 +729,19 @@ app.put('/api/sessions/:id/name', (req, res) => {
   }
   saveSessionNames(names);
   res.json({ ok: true, name: names[req.params.id] || null });
+});
+
+app.put('/api/sessions/:id/note', (req, res) => {
+  const { note } = req.body;
+  if (typeof note !== 'string') return res.status(400).json({ error: 'note must be a string' });
+  const notes = loadSessionNotes();
+  if (note.trim()) {
+    notes[req.params.id] = note.trim();
+  } else {
+    delete notes[req.params.id];
+  }
+  saveSessionNotes(notes);
+  res.json({ ok: true, note: notes[req.params.id] || null });
 });
 
 // Session title rename — modifies the ai-title in the JSONL file (only for completed sessions)
@@ -987,6 +1015,14 @@ function parseMemoryFile(filePath, projectSlug) {
     body,
     path: filePath
   };
+}
+
+function getGitBranch(cwd) {
+  if (!cwd) return null;
+  try {
+    const r = require('child_process').spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd, encoding: 'utf8', timeout: 3000, stdio: ['pipe','pipe','pipe'] });
+    return r.status === 0 ? (r.stdout || '').trim() || null : null;
+  } catch { return null; }
 }
 
 /** Resolve a session's cwd to find the repo-level .claude directory */
@@ -1795,6 +1831,8 @@ module.exports = {
   suggestSessionName,
   loadSessionNames,
   saveSessionNames,
+  loadSessionNotes,
+  saveSessionNotes,
   maskSensitive,
   maskMcpEnv,
   parseFrontmatter,
@@ -1802,6 +1840,7 @@ module.exports = {
   readCopilotAgents,
   parseMemoryFile,
   findRepoClaudeDir,
+  getGitBranch,
   buildSessionList,
   parseCopilotSession,
   buildCopilotSessionList,
