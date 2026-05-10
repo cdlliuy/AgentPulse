@@ -30,7 +30,8 @@
     "dev-test:eventlog": "node scripts/take-screenshots.js --view eventlog",
     "dev-test:detail": "node scripts/take-screenshots.js --view detail",
     "screenshots": "node scripts/take-screenshots.js --mask",
-    "demo": "node scripts/record-demo.js"
+    "demo": "node scripts/record-demo.js",
+    "cleanup": "node -e \"const net=require('net');const s=net.createServer();s.once('error',()=>{const{execSync}=require('child_process');try{const pid=execSync('netstat -ano|findstr :3456|findstr LISTEN',{encoding:'utf8'}).trim().split(/\\s+/).pop();execSync('taskkill /F /PID '+pid);console.log('Killed process '+pid+' on port 3456')}catch{console.log('Could not kill process on port 3456')}});s.once('listening',()=>{s.close();console.log('Port 3456 is free')});s.listen(3456)\""
   },
   "dependencies": {
     "express": "^4.18.2",

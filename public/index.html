@@ -1071,7 +1071,7 @@ function renderActiveDashboard() {
         <span class="status-dot alive"></span>
         <span class="active-card-title">${esc(s.displayName || s.title || s.sessionId.slice(0,8))}</span>
         ${epBadge(s.entrypoint)}
-        <span class="star-btn${isStarred ? ' starred' : ''}" onclick="event.stopPropagation();toggleStar('${s.sessionId}')" title="${isStarred ? 'Unstar' : 'Star'}">${isStarred ? '&#9733;' : '&#9734;'}</span>
+        ${isStarred ? '<span class="star-btn starred" style="cursor:default">&#9733;</span>' : ''}
       </div>
       <div class="active-card-project">${esc(proj)}</div>
       ${s.gitBranch ? `<div class="active-card-branch">⎇ ${esc(s.gitBranch)}</div>` : ''}
@@ -1083,7 +1083,7 @@ function renderActiveDashboard() {
         <span class="stat">Up: <span class="stat-val">${duration}</span></span>
       </div>
       ${lastEventText ? `<div class="active-card-event"><div class="event-label">${lastEvent.type === 'user' ? 'Last user message' : 'Last assistant'}</div>${esc(lastEventText.slice(0, 150))}</div>` : ''}
-      <div class="active-card-note" onclick="event.stopPropagation();editSessionNote('${s.sessionId}')">${s.note ? esc(s.note) : '<span class="note-placeholder">+ Add note</span>'}</div>
+      <div class="active-card-note">${s.note ? esc(s.note) : ''}</div>
       <div class="active-card-footer">
         <span>${fmtDate(s.lastActivity || s.startedAt)} · ${timeAgoLong(s.lastActivity || s.startedAt)}</span>
         <div class="active-card-actions">

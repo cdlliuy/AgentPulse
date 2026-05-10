@@ -52,6 +52,7 @@ function getFleetActiveDir() {
 function exportActiveToFleet() {
   const dir = getFleetActiveDir();
   if (!dir) return;
+  importFleetStarNotes();
   try {
     fs.mkdirSync(dir, { recursive: true });
     const sessions = buildSessionList(true).filter(s => s.alive);
@@ -91,6 +92,48 @@ function exportActiveToFleet() {
         }
       }
     } catch {}
+  } catch {}
+}
+
+function updateFleetSessionField(sessionId, fields) {
+  const cfg = loadFleetConfig();
+  if (!cfg.enabled || !cfg.syncDir) return false;
+  const baseDir = path.join(cfg.syncDir, 'AgentPulse');
+  try {
+    for (const machine of fs.readdirSync(baseDir)) {
+      const filePath = path.join(baseDir, machine, 'active', `session-${sessionId}.json`);
+      if (fs.existsSync(filePath)) {
+        const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        Object.assign(data, fields);
+        fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+        return true;
+      }
+    }
+  } catch {}
+  return false;
+}
+
+function importFleetStarNotes() {
+  const dir = getFleetActiveDir();
+  if (!dir) return;
+  try {
+    const stars = loadSessionStars();
+    const notes = loadSessionNotes();
+    let starsChanged = false, notesChanged = false;
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.startsWith('session-') || !f.endsWith('.json')) continue;
+      try {
+        const data = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+        const id = data.sessionId;
+        if (!id) continue;
+        if (data.starred && !stars[id]) { stars[id] = true; starsChanged = true; }
+        if (!data.starred && stars[id]) { delete stars[id]; starsChanged = true; }
+        if (data.note && data.note !== notes[id]) { notes[id] = data.note; notesChanged = true; }
+        if (!data.note && notes[id]) { delete notes[id]; notesChanged = true; }
+      } catch {}
+    }
+    if (starsChanged) saveSessionStars(stars);
+    if (notesChanged) saveSessionNotes(notes);
   } catch {}
 }
 
@@ -744,9 +787,11 @@ app.put('/api/sessions/:id/name', (req, res) => {
 app.put('/api/sessions/:id/note', (req, res) => {
   const { note } = req.body;
   if (typeof note !== 'string') return res.status(400).json({ error: 'note must be a string' });
+  const trimmed = note.trim();
+  updateFleetSessionField(req.params.id, { note: trimmed || null });
   const notes = loadSessionNotes();
-  if (note.trim()) {
-    notes[req.params.id] = note.trim();
+  if (trimmed) {
+    notes[req.params.id] = trimmed;
   } else {
     delete notes[req.params.id];
   }
@@ -757,6 +802,7 @@ app.put('/api/sessions/:id/note', (req, res) => {
 
 app.put('/api/sessions/:id/star', (req, res) => {
   const { starred } = req.body;
+  updateFleetSessionField(req.params.id, { starred: !!starred });
   const stars = loadSessionStars();
   if (starred) {
     stars[req.params.id] = true;
@@ -1894,6 +1940,8 @@ module.exports = {
   loadFleetConfig,
   saveFleetConfig,
   exportActiveToFleet,
+  updateFleetSessionField,
+  importFleetStarNotes,
   importFleetSessions,
   MACHINE_NAME,
   app,
