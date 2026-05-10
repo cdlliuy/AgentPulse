@@ -1015,6 +1015,7 @@ function renderFleetConfigBar() {
   h += '<label style="color:var(--text)"><input type="checkbox" id="settingsFleetEnabled" ' + (fleetConfig.enabled ? 'checked' : '') + ' onchange="updateFleetFromSettings()"> Enable</label>';
   h += '<input type="text" id="settingsFleetSyncDir" value="' + esc(fleetDir) + '" placeholder="e.g. C:\\Users\\' + esc(fleetConfig.username || 'you') + '\\OneDrive" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-size:11px;flex:1;min-width:200px">';
   h += '<button onclick="updateFleetFromSettings()" style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer">Save</button>';
+  h += '<label style="color:var(--text-dim);margin-left:8px">Startup: <select id="settingsFleetDefaultMode" onchange="updateFleetFromSettings()" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:11px"><option value="local"' + (fleetConfig.defaultMode !== 'observer' ? ' selected' : '') + '>Local</option><option value="observer"' + (fleetConfig.defaultMode === 'observer' ? ' selected' : '') + '>Observer</option></select></label>';
   h += '<span id="fleetSaveStatus" style="font-size:11px"></span>';
   h += '</div>';
   if (fleetConfig.enabled) {
@@ -1124,12 +1125,14 @@ async function loadFleetConfig() {
 async function updateFleetFromSettings() {
   const syncDir = document.getElementById('settingsFleetSyncDir').value;
   const enabled = document.getElementById('settingsFleetEnabled').checked;
+  const defaultModeEl = document.getElementById('settingsFleetDefaultMode');
+  const defaultMode = defaultModeEl ? defaultModeEl.value : 'local';
   const statusEl = document.getElementById('fleetSaveStatus');
   try {
     const res = await fetch('/api/fleet/config', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled, syncDir })
+      body: JSON.stringify({ enabled, syncDir, defaultMode })
     });
     const data = await res.json();
     if (!res.ok) {
@@ -1973,6 +1976,7 @@ function renderCron(s) {
 loadAgents();
 connectWS();
 Promise.all([loadFleetConfig(), loadSessionStars()]).then(() => {
+  if (fleetConfig.defaultMode === 'observer' && fleetConfig.enabled) setFleetMode('observer');
   fetch('/api/claude-cli-status').then(r=>r.json()).then(d => { window._claudeCliStatus = d; }).catch(()=>{});
   fetch('/api/sessions').then(r=>r.json()).then(data => {
     sessions = data; refresh();
