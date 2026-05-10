@@ -1774,15 +1774,27 @@ app.get('/api/copilot/settings', (req, res) => {
 // GET /api/fleet/config — get fleet sync configuration
 app.get('/api/fleet/config', (req, res) => {
   const cfg = loadFleetConfig();
-  res.json({ ...cfg, machineName: MACHINE_NAME });
+  let suggestedDir = '';
+  if (!cfg.syncDir) {
+    const home = os.homedir();
+    for (const name of fs.readdirSync(home).filter(n => n.toLowerCase().startsWith('onedrive'))) {
+      const p = path.join(home, name);
+      try { if (fs.statSync(p).isDirectory()) { suggestedDir = p; break; } } catch {}
+    }
+  }
+  res.json({ ...cfg, machineName: MACHINE_NAME, suggestedDir });
 });
 
 // PUT /api/fleet/config — update fleet sync configuration
 app.put('/api/fleet/config', (req, res) => {
   const { enabled, syncDir } = req.body;
   const cfg = loadFleetConfig();
-  if (typeof enabled === 'boolean') cfg.enabled = enabled;
   if (typeof syncDir === 'string') cfg.syncDir = syncDir;
+  if (typeof enabled === 'boolean') {
+    if (enabled && !cfg.syncDir) return res.status(400).json({ error: 'syncDir is required to enable Fleet sync' });
+    if (enabled && !fs.existsSync(cfg.syncDir)) return res.status(400).json({ error: 'Sync directory does not exist: ' + cfg.syncDir });
+    cfg.enabled = enabled;
+  }
   saveFleetConfig(cfg);
   if (cfg.enabled) exportActiveToFleet();
   res.json({ ...cfg, machineName: MACHINE_NAME });
