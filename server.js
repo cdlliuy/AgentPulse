@@ -135,6 +135,15 @@ function importFleetStarNotes() {
             if (!data.starred && stars[id]) { delete stars[id]; starsChanged = true; }
             if (data.note && data.note !== notes[id]) { notes[id] = data.note; notesChanged = true; }
             if (!data.note && notes[id]) { delete notes[id]; notesChanged = true; }
+            if (data.requestClose && data.machine === MACHINE_NAME) {
+              const localSessions = buildSessionList(false);
+              const target = localSessions.find(s => s.sessionId === id && s.alive && s.pid);
+              if (target) {
+                try { process.kill(target.pid, 'SIGTERM'); } catch {}
+              }
+              data.requestClose = false;
+              fs.writeFileSync(path.join(activeDir, f), JSON.stringify(data, null, 2));
+            }
           } catch {}
         }
       } catch {}
@@ -1884,6 +1893,13 @@ app.put('/api/fleet/config', (req, res) => {
 // GET /api/fleet/sessions — get all fleet-wide active sessions
 app.get('/api/fleet/sessions', (req, res) => {
   res.json(importFleetSessions());
+});
+
+// POST /api/fleet/sessions/:id/close — request remote session close via fleet sync
+app.post('/api/fleet/sessions/:id/close', (req, res) => {
+  const ok = updateFleetSessionField(req.params.id, { requestClose: true });
+  if (!ok) return res.status(404).json({ error: 'Fleet session not found' });
+  res.json({ ok: true, message: 'Close request written — will be processed on next sync cycle' });
 });
 
 // GET /api/agents — returns list of available AI agents with status

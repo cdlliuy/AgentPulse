@@ -46,6 +46,7 @@ const {
   loadFleetConfig,
   saveFleetConfig,
   exportActiveToFleet,
+  updateFleetSessionField,
   importFleetSessions,
   buildSessionList,
   MACHINE_NAME,
@@ -1107,6 +1108,28 @@ describe('Fleet API', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('enabled');
     expect(res.body).toHaveProperty('syncDir');
+  });
+
+  test('POST /api/fleet/sessions/:id/close returns 404 for unknown session', async () => {
+    const res = await request(app).post('/api/fleet/sessions/nonexistent/close');
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/not found/i);
+  });
+
+  test('POST /api/fleet/sessions/:id/close sets requestClose on fleet session', () => {
+    const tmpDir = path.join(os.tmpdir(), 'agentpulse-fleet-close-' + Date.now());
+    const machineDir = path.join(tmpDir, 'AgentPulse', 'test-machine', 'active');
+    fs.mkdirSync(machineDir, { recursive: true });
+    const sessionData = { machine: 'test-machine', sessionId: 'close-test-1', alive: true };
+    fs.writeFileSync(path.join(machineDir, 'session-close-test-1.json'), JSON.stringify(sessionData));
+    const origCfg = loadFleetConfig();
+    saveFleetConfig({ enabled: true, syncDir: tmpDir });
+    const result = updateFleetSessionField('close-test-1', { requestClose: true });
+    expect(result).toBe(true);
+    const updated = JSON.parse(fs.readFileSync(path.join(machineDir, 'session-close-test-1.json'), 'utf8'));
+    expect(updated.requestClose).toBe(true);
+    saveFleetConfig(origCfg);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
   test('importFleetSessions reads session files from sync dir', () => {

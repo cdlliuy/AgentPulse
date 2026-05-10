@@ -1201,13 +1201,23 @@ function renderFleetCards(allSessions) {
         <div class="active-card-note" onclick="event.stopPropagation();editSessionNote('${s.sessionId}')">${s.note ? esc(s.note) : '<span class="note-placeholder">+ Add note</span>'}</div>
         <div class="active-card-footer">
           <span>${fmtDate(s.lastActivity || s.exportedAt || s.startedAt)} · ${timeAgoLong(s.lastActivity || s.exportedAt || s.startedAt)}</span>
-          ${!isRemote ? `<div class="active-card-actions"><button onclick="event.stopPropagation();switchTopTab('sessions');selectSession('${s.sessionId}')">Details</button><button class="danger" onclick="event.stopPropagation();closeSession('${s.sessionId}','${s.pid}')">Close</button></div>` : ''}
+          ${!isRemote ? `<div class="active-card-actions"><button onclick="event.stopPropagation();switchTopTab('sessions');selectSession('${s.sessionId}')">Details</button><button class="danger" onclick="event.stopPropagation();closeSession('${s.sessionId}','${s.pid}')">Close</button></div>` : `<div class="active-card-actions"><button class="danger" onclick="event.stopPropagation();requestRemoteClose('${s.sessionId}')">Request Close</button></div>`}
         </div>
       </div>`;
     }
     html += '</div></div>';
   }
   return html;
+}
+
+async function requestRemoteClose(sessionId) {
+  if (!confirm('Request remote close for this session? It will be closed on the next sync cycle (~5 min).')) return;
+  try {
+    const res = await fetch('/api/fleet/sessions/' + sessionId + '/close', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    const data = await res.json();
+    if (res.ok) alert('Close request sent. Session will be terminated on next sync cycle.');
+    else alert('Failed: ' + (data.error || 'Unknown error'));
+  } catch (e) { alert('Failed: ' + e.message); }
 }
 
 async function selectSession(id) {
