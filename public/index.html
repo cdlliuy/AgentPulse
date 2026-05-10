@@ -490,6 +490,17 @@ function renderConfigPage() {
   if (!g.claudeMd && !g.claudeLocalMd) html += '<div style="color:var(--text-dim);font-size:12px">No CLAUDE.md files found</div>';
   html += '</div></div>';
 
+  // Fleet Sync config
+  html += '<div class="settings-section"><div class="settings-header" onclick="toggleSettingsSection(\'cfg-fleet-sync\')"><h3 style="color:var(--green)">&#9741; Fleet Sync (Multi-Machine)</h3><span id="toggle-cfg-fleet-sync" style="color:var(--text-dim)">&#9654;</span></div>';
+  html += '<div id="cfg-fleet-sync" style="display:none" class="settings-body">';
+  html += '<div style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Sync active sessions across machines via a shared directory (e.g. OneDrive). Other machines running AgentPulse in Observer mode will see your sessions.</div>';
+  html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><label style="font-size:12px;color:var(--text)"><input type="checkbox" id="settingsFleetEnabled" ' + (fleetConfig.enabled ? 'checked' : '') + ' onchange="updateFleetFromSettings()"> Enabled</label></div>';
+  html += '<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:4px">Sync Directory</label>';
+  html += '<div style="display:flex;gap:8px"><input type="text" id="settingsFleetSyncDir" value="' + esc(fleetConfig.syncDir || '') + '" placeholder="e.g. C:\\Users\\you\\OneDrive" style="background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;flex:1;min-width:300px">';
+  html += '<button onclick="updateFleetFromSettings()" style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:4px 12px;font-size:12px;cursor:pointer">Save</button></div></div>';
+  html += '<div style="font-size:11px;color:var(--text-faint)">Machine name: <strong style="color:var(--text-dim)">' + esc(fleetConfig.machineName || '?') + '</strong> · Data path: <code style="font-size:10px">' + esc((fleetConfig.syncDir || '...') + '/AgentPulse/' + (fleetConfig.machineName || '')) + '</code></div>';
+  html += '</div></div>';
+
   // Global User Skills (async placeholder)
   html += '<div class="settings-section" id="cc-global-skills-slot"><div class="settings-header"><h3 style="color:var(--purple)">Global User Skills</h3><span style="color:var(--text-dim);font-size:11px">Loading...</span></div></div>';
 
@@ -1084,6 +1095,21 @@ async function loadFleetConfig() {
   } catch {}
 }
 
+async function updateFleetFromSettings() {
+  const syncDir = document.getElementById('settingsFleetSyncDir').value;
+  const enabled = document.getElementById('settingsFleetEnabled').checked;
+  try {
+    const res = await fetch('/api/fleet/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled, syncDir })
+    });
+    fleetConfig = await res.json();
+    fetchFleetSessions();
+    renderActiveDashboard();
+    renderConfigPage();
+  } catch {}
+}
 async function saveFleetConfigUI() {
   const syncDir = document.getElementById('fleetSyncDir').value;
   const enabled = document.getElementById('fleetEnabled').checked;
