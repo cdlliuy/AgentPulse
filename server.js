@@ -54,12 +54,12 @@ function getFleetActiveDir() {
 function exportActiveToFleet() {
   const dir = getFleetActiveDir();
   if (!dir) return;
+  const killedIds = processObserverCommands();
   try {
     fs.mkdirSync(dir, { recursive: true });
-    const sessions = buildSessionList(true).filter(s => s.alive);
+    const sessions = buildSessionList(true).filter(s => s.alive && !killedIds.has(s.sessionId));
     const activeIds = new Set(sessions.map(s => s.sessionId));
     const stars = loadSessionStars();
-    // Write active session files
     for (const s of sessions) {
       const data = {
         machine: MACHINE_NAME,
@@ -84,7 +84,6 @@ function exportActiveToFleet() {
       };
       fs.writeFileSync(path.join(dir, `session-${s.sessionId}.json`), JSON.stringify(data, null, 2));
     }
-    // Remove files for sessions no longer active
     try {
       for (const f of fs.readdirSync(dir)) {
         if ((f.startsWith('session-') || f.startsWith('observer-')) && f.endsWith('.json')) {
@@ -94,7 +93,6 @@ function exportActiveToFleet() {
       }
     } catch {}
   } catch {}
-  processObserverCommands();
   lastFleetSyncAt = Date.now();
 }
 
@@ -120,8 +118,9 @@ function writeObserverCommand(sessionId, fields) {
 }
 
 function processObserverCommands() {
+  const killedIds = new Set();
   const cfg = loadFleetConfig();
-  if (!cfg.enabled || !cfg.syncDir) return;
+  if (!cfg.enabled || !cfg.syncDir) return killedIds;
   const baseDir = path.join(cfg.syncDir, 'AgentPulse');
   try {
     const stars = loadSessionStars();
@@ -149,6 +148,7 @@ function processObserverCommands() {
               const target = localSessions.find(s => s.sessionId === id && s.alive && s.pid);
               if (target) {
                 try { process.kill(target.pid, 'SIGTERM'); } catch {}
+                killedIds.add(id);
               }
               data.requestClose = false;
               fs.writeFileSync(path.join(activeDir, f), JSON.stringify(data, null, 2));
@@ -160,6 +160,7 @@ function processObserverCommands() {
     if (starsChanged) saveSessionStars(stars);
     if (notesChanged) saveSessionNotes(notes);
   } catch {}
+  return killedIds;
 }
 
 function importFleetSessions() {
