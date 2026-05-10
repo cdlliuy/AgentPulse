@@ -1029,6 +1029,10 @@ describe('REST API — additional endpoints', () => {
 // ═══════════════════════════════════════════════════════
 
 describe('Fleet API', () => {
+  let originalFleetConfig;
+  beforeAll(() => { originalFleetConfig = loadFleetConfig(); });
+  afterAll(() => { saveFleetConfig(originalFleetConfig); });
+
   test('GET /api/fleet/config returns config with machineName', async () => {
     const res = await request(app).get('/api/fleet/config');
     expect(res.status).toBe(200);

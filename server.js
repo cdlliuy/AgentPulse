@@ -27,6 +27,7 @@ const COPILOT_CONFIG = path.join(COPILOT_DIR, 'config.json');
 const COPILOT_AGENTS_DIR = path.join(COPILOT_DIR, 'agents');
 
 const WS_PUSH_INTERVAL_MS = 5000;
+const FLEET_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const WS_MAX_SESSIONS = 30;
 const AI_SUMMARY_CACHE_TTL_MS = 600000; // 10 min
 
@@ -114,22 +115,28 @@ function updateFleetSessionField(sessionId, fields) {
 }
 
 function importFleetStarNotes() {
-  const dir = getFleetActiveDir();
-  if (!dir) return;
+  const cfg = loadFleetConfig();
+  if (!cfg.enabled || !cfg.syncDir) return;
+  const baseDir = path.join(cfg.syncDir, 'AgentPulse');
   try {
     const stars = loadSessionStars();
     const notes = loadSessionNotes();
     let starsChanged = false, notesChanged = false;
-    for (const f of fs.readdirSync(dir)) {
-      if (!f.startsWith('session-') || !f.endsWith('.json')) continue;
+    for (const machine of fs.readdirSync(baseDir)) {
+      const activeDir = path.join(baseDir, machine, 'active');
       try {
-        const data = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
-        const id = data.sessionId;
-        if (!id) continue;
-        if (data.starred && !stars[id]) { stars[id] = true; starsChanged = true; }
-        if (!data.starred && stars[id]) { delete stars[id]; starsChanged = true; }
-        if (data.note && data.note !== notes[id]) { notes[id] = data.note; notesChanged = true; }
-        if (!data.note && notes[id]) { delete notes[id]; notesChanged = true; }
+        for (const f of fs.readdirSync(activeDir)) {
+          if (!f.startsWith('session-') || !f.endsWith('.json')) continue;
+          try {
+            const data = JSON.parse(fs.readFileSync(path.join(activeDir, f), 'utf8'));
+            const id = data.sessionId;
+            if (!id) continue;
+            if (data.starred && !stars[id]) { stars[id] = true; starsChanged = true; }
+            if (!data.starred && stars[id]) { delete stars[id]; starsChanged = true; }
+            if (data.note && data.note !== notes[id]) { notes[id] = data.note; notesChanged = true; }
+            if (!data.note && notes[id]) { delete notes[id]; notesChanged = true; }
+          } catch {}
+        }
       } catch {}
     }
     if (starsChanged) saveSessionStars(stars);
@@ -1522,7 +1529,6 @@ wss.on('connection', (ws) => {
       // Only send active sessions + recent 20 historical for live updates
       const active = buildSessionList(true).slice(0, WS_MAX_SESSIONS);
       ws.send(JSON.stringify({ type: 'sessions', data: active }));
-      exportActiveToFleet();
     }
   };
   sendUpdate();
@@ -1907,6 +1913,8 @@ if (require.main === module) {
     console.log(`  Sessions: ${sessions.filter(s => s.alive).length} active / ${sessions.length} total`);
     console.log(`  Projects: ${[...new Set(sessions.map(s => s.project).filter(Boolean))].join(', ')}`);
     console.log(`  Claude:   ${claudeCliStatus.available ? 'v' + claudeCliStatus.version : '✗ not found — install: npm i -g @anthropic-ai/claude-code'}\n`);
+    exportActiveToFleet();
+    setInterval(exportActiveToFleet, FLEET_SYNC_INTERVAL_MS);
   });
 }
 
