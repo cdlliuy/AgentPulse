@@ -28,6 +28,7 @@ const COPILOT_AGENTS_DIR = path.join(COPILOT_DIR, 'agents');
 
 const WS_PUSH_INTERVAL_MS = 5000;
 const FLEET_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+const FLEET_IMPORT_INTERVAL_MS = 30 * 1000;
 const WS_MAX_SESSIONS = 30;
 const AI_SUMMARY_CACHE_TTL_MS = 600000; // 10 min
 
@@ -53,7 +54,6 @@ function getFleetActiveDir() {
 function exportActiveToFleet() {
   const dir = getFleetActiveDir();
   if (!dir) return;
-  importFleetStarNotes();
   try {
     fs.mkdirSync(dir, { recursive: true });
     const sessions = buildSessionList(true).filter(s => s.alive);
@@ -1914,7 +1914,9 @@ if (require.main === module) {
     console.log(`  Projects: ${[...new Set(sessions.map(s => s.project).filter(Boolean))].join(', ')}`);
     console.log(`  Claude:   ${claudeCliStatus.available ? 'v' + claudeCliStatus.version : '✗ not found — install: npm i -g @anthropic-ai/claude-code'}\n`);
     exportActiveToFleet();
+    importFleetStarNotes();
     setInterval(exportActiveToFleet, FLEET_SYNC_INTERVAL_MS);
+    setInterval(importFleetStarNotes, FLEET_IMPORT_INTERVAL_MS);
   });
 }
 
