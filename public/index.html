@@ -227,6 +227,10 @@
     .active-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
     .active-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
     .active-card:hover { border-color: var(--accent); box-shadow: 0 0 12px #58a6ff20; }
+    .active-card.starred { border-color: var(--yellow, #e3b341); box-shadow: 0 0 8px #e3b34130; }
+    .star-btn { cursor: pointer; font-size: 16px; color: var(--text-faint); flex-shrink: 0; transition: color 0.15s; }
+    .star-btn:hover { color: var(--yellow, #e3b341); }
+    .star-btn.starred { color: var(--yellow, #e3b341); }
     .active-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
     .active-card-header .status-dot { width: 10px; height: 10px; flex-shrink: 0; }
     .active-card-title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
@@ -344,6 +348,7 @@ let currentTopTab = 'active'; // 'sessions' | 'active' | 'config'
 let fleetMode = 'local'; // 'local' | 'observer'
 let fleetConfig = { enabled: false, syncDir: '', machineName: '' };
 let fleetSessions = [];
+let sessionStars = {}; // { sessionId: true }
 let configCache = null; // cached /api/projects data
 let currentAgent = 'claude-code'; // 'claude-code' | 'github-copilot'
 let agentsList = []; // from /api/agents
@@ -490,18 +495,7 @@ function renderConfigPage() {
   if (!g.claudeMd && !g.claudeLocalMd) html += '<div style="color:var(--text-dim);font-size:12px">No CLAUDE.md files found</div>';
   html += '</div></div>';
 
-  // Fleet Sync config
-  const fleetDir = fleetConfig.syncDir || fleetConfig.suggestedDir || '';
-  html += '<div class="settings-section"><div class="settings-header" onclick="toggleSettingsSection(\'cfg-fleet-sync\')"><h3 style="color:var(--green)">&#9741; Fleet Sync (Multi-Machine)</h3><span id="toggle-cfg-fleet-sync" style="color:var(--text-dim)">&#9654;</span></div>';
-  html += '<div id="cfg-fleet-sync" style="display:none" class="settings-body">';
-  html += '<div style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Sync active sessions across machines via a shared directory (e.g. OneDrive). Other machines running AgentPulse in Observer mode will see your sessions.</div>';
-  html += '<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:4px">Sync Directory</label>';
-  html += '<div style="display:flex;gap:8px"><input type="text" id="settingsFleetSyncDir" value="' + esc(fleetDir) + '" placeholder="e.g. C:\\Users\\' + esc(fleetConfig.username || 'you') + '\\OneDrive" style="background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;flex:1;min-width:300px">';
-  html += '<button onclick="updateFleetFromSettings()" style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:4px 12px;font-size:12px;cursor:pointer">Save</button></div></div>';
-  html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><label style="font-size:12px;color:var(--text)"><input type="checkbox" id="settingsFleetEnabled" ' + (fleetConfig.enabled ? 'checked' : '') + ' onchange="updateFleetFromSettings()"> Enable sync</label></div>';
-  html += '<div id="fleetSaveStatus" style="font-size:11px;margin-bottom:8px"></div>';
-  html += '<div style="font-size:11px;color:var(--text-faint)">Machine: <strong style="color:var(--text-dim)">' + esc(fleetConfig.machineName || '?') + '</strong> · Data: <code style="font-size:10px">' + esc((fleetDir || '...') + '/AgentPulse/' + (fleetConfig.machineName || '')) + '</code></div>';
-  html += '</div></div>';
+  // Fleet Sync config — moved to Active dashboard, not shown here
 
   // Global User Skills (async placeholder)
   html += '<div class="settings-section" id="cc-global-skills-slot"><div class="settings-header"><h3 style="color:var(--purple)">Global User Skills</h3><span style="color:var(--text-dim);font-size:11px">Loading...</span></div></div>';
@@ -1012,20 +1006,41 @@ function renderList() {
   }).join('');
 }
 
+function renderFleetConfigBar() {
+  const fleetDir = fleetConfig.syncDir || fleetConfig.suggestedDir || '';
+  let h = '<div class="fleet-config-bar" style="margin-bottom:12px;padding:10px 14px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;font-size:12px">';
+  h += '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">';
+  h += '<span style="color:var(--green);font-weight:600">&#9741; Fleet Sync</span>';
+  h += '<label style="color:var(--text)"><input type="checkbox" id="settingsFleetEnabled" ' + (fleetConfig.enabled ? 'checked' : '') + ' onchange="updateFleetFromSettings()"> Enable</label>';
+  h += '<input type="text" id="settingsFleetSyncDir" value="' + esc(fleetDir) + '" placeholder="e.g. C:\\Users\\' + esc(fleetConfig.username || 'you') + '\\OneDrive" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-size:11px;flex:1;min-width:200px">';
+  h += '<button onclick="updateFleetFromSettings()" style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer">Save</button>';
+  h += '<span id="fleetSaveStatus" style="font-size:11px"></span>';
+  h += '</div>';
+  if (fleetConfig.enabled) {
+    h += '<div style="margin-top:6px;font-size:10px;color:var(--text-faint)">Machine: <strong style="color:var(--text-dim)">' + esc(fleetConfig.machineName || '?') + '</strong> · Sync: <code>' + esc(fleetDir + '/AgentPulse/' + (fleetConfig.machineName || '')) + '</code></div>';
+  }
+  h += '</div>';
+  return h;
+}
+
 function renderActiveDashboard() {
   const el = document.getElementById('activeDashboard');
+  let html = renderFleetConfigBar();
   if (fleetMode === 'observer') {
     const allSessions = fleetSessions.length ? fleetSessions : sessions.filter(s => s.alive);
     if (!allSessions.length) {
-      el.innerHTML = '<div class="active-empty"><h3>No active sessions</h3><p>Configure Fleet sync to see sessions from other machines.</p></div>';
+      html += '<div class="active-empty"><h3>No active sessions</h3><p>Configure Fleet sync to see sessions from other machines.</p></div>';
+      el.innerHTML = html;
       return;
     }
-    el.innerHTML = renderFleetCards(allSessions);
+    html += renderFleetCards(allSessions);
+    el.innerHTML = html;
     return;
   }
   const activeSessions = sessions.filter(s => s.alive);
   if (!activeSessions.length) {
-    el.innerHTML = '<div class="active-empty"><h3>No active sessions</h3><p>All sessions are completed or idle.</p></div>';
+    html += '<div class="active-empty"><h3>No active sessions</h3><p>All sessions are completed or idle.</p></div>';
+    el.innerHTML = html;
     return;
   }
   const projectGroups = {};
@@ -1033,22 +1048,30 @@ function renderActiveDashboard() {
     const proj = s.project ? s.project.split('--').pop() : shortPath(s.cwd) || 'Unknown';
     (projectGroups[proj] = projectGroups[proj] || []).push(s);
   }
-  let html = `<div class="active-summary"><span><span class="count">${activeSessions.length}</span> active session${activeSessions.length>1?'s':''}</span>`;
-  html += `<span>${Object.keys(projectGroups).length} project${Object.keys(projectGroups).length>1?'s':''}</span></div>`;
+  // Separate starred and unstarred
+  const starred = activeSessions.filter(s => sessionStars[s.sessionId]);
+  const unstarred = activeSessions.filter(s => !sessionStars[s.sessionId]);
+  html += `<div class="active-summary"><span><span class="count">${activeSessions.length}</span> active session${activeSessions.length>1?'s':''}</span>`;
+  html += `<span>${Object.keys(projectGroups).length} project${Object.keys(projectGroups).length>1?'s':''}</span>`;
+  if (starred.length) html += `<span>${starred.length} starred</span>`;
+  html += `</div>`;
   html += '<div class="active-grid">';
-  for (const s of activeSessions) {
+  const orderedSessions = [...starred, ...unstarred];
+  for (const s of orderedSessions) {
     const proj = s.project ? s.project.split('--').pop() : shortPath(s.cwd) || '';
     const lastEvent = (s.recentEvents || []).filter(e => e.type === 'user' || e.type === 'assistant').slice(-1)[0];
     const lastEventText = lastEvent ? lastEvent.text || '' : '';
     const duration = s.startedAt ? timeAgo(s.startedAt) : '';
     const todosDone = (s.todos || []).filter(t => t.status === 'completed').length;
     const todosTotal = (s.todos || []).length;
+    const isStarred = sessionStars[s.sessionId];
     html += `
-    <div class="active-card" onclick="switchTopTab('sessions');selectSession('${s.sessionId}')">
+    <div class="active-card${isStarred ? ' starred' : ''}" onclick="switchTopTab('sessions');selectSession('${s.sessionId}')">
       <div class="active-card-header">
         <span class="status-dot alive"></span>
         <span class="active-card-title">${esc(s.displayName || s.title || s.sessionId.slice(0,8))}</span>
         ${epBadge(s.entrypoint)}
+        <span class="star-btn${isStarred ? ' starred' : ''}" onclick="event.stopPropagation();toggleStar('${s.sessionId}')" title="${isStarred ? 'Unstar' : 'Star'}">${isStarred ? '&#9733;' : '&#9734;'}</span>
       </div>
       <div class="active-card-project">${esc(proj)}</div>
       ${s.gitBranch ? `<div class="active-card-branch">⎇ ${esc(s.gitBranch)}</div>` : ''}
@@ -1121,25 +1144,13 @@ async function updateFleetFromSettings() {
     if (statusEl) { statusEl.style.color = 'var(--red)'; statusEl.textContent = 'Network error'; }
   }
 }
-async function saveFleetConfigUI() {
-  const syncDir = document.getElementById('fleetSyncDir').value;
-  const enabled = document.getElementById('fleetEnabled').checked;
-  try {
-    const res = await fetch('/api/fleet/config', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled, syncDir })
-    });
-    fleetConfig = await res.json();
-    fetchFleetSessions();
-    renderActiveDashboard();
-  } catch {}
-}
-
 async function fetchFleetSessions() {
   try {
     const res = await fetch('/api/fleet/sessions');
     fleetSessions = await res.json();
+    for (const s of fleetSessions) {
+      if (s.starred) sessionStars[s.sessionId] = true;
+    }
     if (currentTopTab === 'active') renderActiveDashboard();
   } catch {}
 }
@@ -1151,29 +1162,29 @@ function renderFleetCards(allSessions) {
     (machineGroups[m] = machineGroups[m] || []).push(s);
   }
   let html = `<div class="active-summary"><span><span class="count">${allSessions.length}</span> active session${allSessions.length>1?'s':''}</span>`;
-  html += `<span>${Object.keys(machineGroups).length} machine${Object.keys(machineGroups).length>1?'s':''}</span></div>`;
-  if (!fleetConfig.enabled) {
-    html += `<div class="fleet-config-panel"><h4>Fleet Sync Setup</h4>`;
-    html += `<label><input type="checkbox" id="fleetEnabled" ${fleetConfig.enabled?'checked':''}> Enable Fleet Sync</label><br>`;
-    html += `<div style="margin-top:8px"><input type="text" id="fleetSyncDir" value="${esc(fleetConfig.syncDir || '')}" placeholder="OneDrive sync directory path">`;
-    html += `<button onclick="saveFleetConfigUI()">Save</button></div>`;
-    html += `<div class="fleet-status">Machine: ${esc(fleetConfig.machineName)}</div></div>`;
-  }
+  html += `<span>${Object.keys(machineGroups).length} machine${Object.keys(machineGroups).length>1?'s':''}</span>`;
+  const starredCount = allSessions.filter(s => sessionStars[s.sessionId]).length;
+  if (starredCount) html += `<span>${starredCount} starred</span>`;
+  html += `</div>`;
   for (const [machine, mSessions] of Object.entries(machineGroups)) {
     const isLocal = machine === fleetConfig.machineName;
+    // Sort starred first within each machine group
+    const sorted = [...mSessions.filter(s => sessionStars[s.sessionId]), ...mSessions.filter(s => !sessionStars[s.sessionId])];
     html += `<div class="fleet-machine-group">`;
     html += `<div class="fleet-machine-header"><span>${esc(machine)}</span><span class="machine-badge ${isLocal?'machine-local':''}">${isLocal?'local':'remote'}</span><span class="machine-badge">${mSessions.length} session${mSessions.length>1?'s':''}</span></div>`;
     html += '<div class="active-grid">';
-    for (const s of mSessions) {
+    for (const s of sorted) {
       const proj = s.project ? s.project.split('--').pop() : '';
       const duration = s.startedAt ? timeAgo(s.startedAt) : '';
       const isRemote = s.isRemote;
+      const isStarred = sessionStars[s.sessionId];
       html += `
-      <div class="active-card" ${!isRemote ? `onclick="switchTopTab('sessions');selectSession('${s.sessionId}')"` : ''} style="${isRemote?'cursor:default':''}" >
+      <div class="active-card${isStarred ? ' starred' : ''}" ${!isRemote ? `onclick="switchTopTab('sessions');selectSession('${s.sessionId}')"` : ''} style="${isRemote?'cursor:default':''}" >
         <div class="active-card-header">
           <span class="status-dot alive"></span>
           <span class="active-card-title">${esc(s.displayName || s.sessionId.slice(0,8))}</span>
           ${s.entrypoint ? epBadge(s.entrypoint) : ''}
+          <span class="star-btn${isStarred ? ' starred' : ''}" onclick="event.stopPropagation();toggleStar('${s.sessionId}')" title="${isStarred ? 'Unstar' : 'Star'}">${isStarred ? '&#9733;' : '&#9734;'}</span>
         </div>
         <div class="active-card-project">${esc(proj)}</div>
         ${s.gitBranch ? `<div class="active-card-branch">⎇ ${esc(s.gitBranch)}</div>` : ''}
@@ -1238,11 +1249,38 @@ async function editSessionNote(sessionId) {
   const current = (sessions.concat(fleetSessions || [])).find(s => s.sessionId === sessionId)?.note || '';
   const note = prompt('Session note:', current);
   if (note === null) return;
-  await fetch('/api/sessions/' + sessionId + '/note', {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ note })
-  });
-  fetchActiveSessions();
+  try {
+    const res = await fetch('/api/sessions/' + sessionId + '/note', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note })
+    });
+    if (res.ok) {
+      const all = sessions.concat(fleetSessions || []);
+      const s = all.find(x => x.sessionId === sessionId);
+      if (s) s.note = note.trim() || null;
+      renderActiveDashboard();
+    }
+  } catch {}
+}
+
+async function toggleStar(sessionId) {
+  const starred = !sessionStars[sessionId];
+  try {
+    await fetch('/api/sessions/' + sessionId + '/star', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ starred })
+    });
+    if (starred) sessionStars[sessionId] = true;
+    else delete sessionStars[sessionId];
+    renderActiveDashboard();
+  } catch {}
+}
+
+async function loadSessionStars() {
+  try {
+    const res = await fetch('/api/session-stars');
+    sessionStars = await res.json();
+  } catch {}
 }
 
 async function closeSession(sessionId, pid) {
@@ -1933,14 +1971,15 @@ function renderCron(s) {
 // Boot
 loadAgents();
 connectWS();
-loadFleetConfig();
-fetch('/api/claude-cli-status').then(r=>r.json()).then(d => { window._claudeCliStatus = d; }).catch(()=>{});
-fetch('/api/sessions').then(r=>r.json()).then(data => {
-  sessions = data; refresh();
-  if (sessions.length > 0) {
-    const active = sessions.find(s => s.alive);
-    selectSession((active||sessions[0]).sessionId);
-  }
+Promise.all([loadFleetConfig(), loadSessionStars()]).then(() => {
+  fetch('/api/claude-cli-status').then(r=>r.json()).then(d => { window._claudeCliStatus = d; }).catch(()=>{});
+  fetch('/api/sessions').then(r=>r.json()).then(data => {
+    sessions = data; refresh();
+    if (sessions.length > 0) {
+      const active = sessions.find(s => s.alive);
+      selectSession((active||sessions[0]).sessionId);
+    }
+  });
 });
 </script>
 </body>

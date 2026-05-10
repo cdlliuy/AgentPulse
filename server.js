@@ -14,6 +14,7 @@ const SESSIONS_DIR = path.join(CLAUDE_DIR, 'sessions');
 const PROJECTS_DIR = path.join(CLAUDE_DIR, 'projects');
 const SESSION_NAMES_FILE = path.join(__dirname, 'session-names.json');
 const SESSION_NOTES_FILE = path.join(__dirname, 'session-notes.json');
+const SESSION_STARS_FILE = path.join(__dirname, 'session-stars.json');
 const AI_SUMMARIES_DIR = path.join(CLAUDE_DIR, 'claude-code-dashboard');
 const AI_SUMMARIES_FILE = path.join(AI_SUMMARIES_DIR, 'ai-summaries.json');
 const GLOBAL_CLAUDE_JSON = path.join(os.homedir(), '.claude.json');
@@ -55,6 +56,7 @@ function exportActiveToFleet() {
     fs.mkdirSync(dir, { recursive: true });
     const sessions = buildSessionList(true).filter(s => s.alive);
     const activeIds = new Set(sessions.map(s => s.sessionId));
+    const stars = loadSessionStars();
     // Write active session files
     for (const s of sessions) {
       const data = {
@@ -71,6 +73,7 @@ function exportActiveToFleet() {
         alive: true,
         gitBranch: s.gitBranch || null,
         note: s.note || null,
+        starred: !!stars[s.sessionId],
         exportedAt: new Date().toISOString(),
         lastMessage: (() => {
           const ev = (s.recentEvents || []).filter(e => e.type === 'user' || e.type === 'assistant').slice(-1)[0];
@@ -195,6 +198,13 @@ function loadSessionNotes() {
 }
 function saveSessionNotes(notes) {
   fs.writeFileSync(SESSION_NOTES_FILE, JSON.stringify(notes, null, 2), 'utf8');
+}
+
+function loadSessionStars() {
+  try { return JSON.parse(fs.readFileSync(SESSION_STARS_FILE, 'utf8')); } catch { return {}; }
+}
+function saveSessionStars(stars) {
+  fs.writeFileSync(SESSION_STARS_FILE, JSON.stringify(stars, null, 2), 'utf8');
 }
 
 /** Generate a suggested name for a session based on its content */
@@ -741,7 +751,25 @@ app.put('/api/sessions/:id/note', (req, res) => {
     delete notes[req.params.id];
   }
   saveSessionNotes(notes);
+  exportActiveToFleet();
   res.json({ ok: true, note: notes[req.params.id] || null });
+});
+
+app.put('/api/sessions/:id/star', (req, res) => {
+  const { starred } = req.body;
+  const stars = loadSessionStars();
+  if (starred) {
+    stars[req.params.id] = true;
+  } else {
+    delete stars[req.params.id];
+  }
+  saveSessionStars(stars);
+  exportActiveToFleet();
+  res.json({ ok: true, starred: !!stars[req.params.id] });
+});
+
+app.get('/api/session-stars', (req, res) => {
+  res.json(loadSessionStars());
 });
 
 // Session title rename — modifies the ai-title in the JSONL file (only for completed sessions)
@@ -1845,6 +1873,8 @@ module.exports = {
   saveSessionNames,
   loadSessionNotes,
   saveSessionNotes,
+  loadSessionStars,
+  saveSessionStars,
   maskSensitive,
   maskMcpEnv,
   parseFrontmatter,

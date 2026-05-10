@@ -2,6 +2,7 @@ node_modules/
 package-lock.json
 session-names.json
 session-notes.json
+session-stars.json
 *.log
 .DS_Store
 Thumbs.db
