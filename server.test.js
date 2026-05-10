@@ -46,7 +46,7 @@ const {
   loadFleetConfig,
   saveFleetConfig,
   exportActiveToFleet,
-  updateFleetSessionField,
+  writeObserverCommand,
   importFleetSessions,
   buildSessionList,
   MACHINE_NAME,
@@ -1124,9 +1124,9 @@ describe('Fleet API', () => {
     fs.writeFileSync(path.join(machineDir, 'session-close-test-1.json'), JSON.stringify(sessionData));
     const origCfg = loadFleetConfig();
     saveFleetConfig({ enabled: true, syncDir: tmpDir });
-    const result = updateFleetSessionField('close-test-1', { requestClose: true });
+    const result = writeObserverCommand('close-test-1', { requestClose: true });
     expect(result).toBe(true);
-    const updated = JSON.parse(fs.readFileSync(path.join(machineDir, 'session-close-test-1.json'), 'utf8'));
+    const updated = JSON.parse(fs.readFileSync(path.join(machineDir, 'observer-close-test-1.json'), 'utf8'));
     expect(updated.requestClose).toBe(true);
     saveFleetConfig(origCfg);
     fs.rmSync(tmpDir, { recursive: true, force: true });

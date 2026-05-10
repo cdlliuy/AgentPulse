@@ -81,37 +81,35 @@ function exportActiveToFleet() {
           return ev ? { type: ev.type, text: (ev.text || '').slice(0, 200) } : null;
         })(),
       };
-      const filePath = path.join(dir, `session-${s.sessionId}.json`);
-      try {
-        const existing = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        if (existing.requestClose) data.requestClose = true;
-      } catch {}
-      fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+      fs.writeFileSync(path.join(dir, `session-${s.sessionId}.json`), JSON.stringify(data, null, 2));
     }
     // Remove files for sessions no longer active
     try {
       for (const f of fs.readdirSync(dir)) {
-        if (f.startsWith('session-') && f.endsWith('.json')) {
-          const id = f.slice(8, -5);
+        if ((f.startsWith('session-') || f.startsWith('observer-')) && f.endsWith('.json')) {
+          const id = f.replace(/^(session|observer)-/, '').slice(0, -5);
           if (!activeIds.has(id)) fs.unlinkSync(path.join(dir, f));
         }
       }
     } catch {}
   } catch {}
-  importFleetStarNotes();
+  processObserverCommands();
 }
 
-function updateFleetSessionField(sessionId, fields) {
+function writeObserverCommand(sessionId, fields) {
   const cfg = loadFleetConfig();
   if (!cfg.enabled || !cfg.syncDir) return false;
   const baseDir = path.join(cfg.syncDir, 'AgentPulse');
   try {
     for (const machine of fs.readdirSync(baseDir)) {
-      const filePath = path.join(baseDir, machine, 'active', `session-${sessionId}.json`);
-      if (fs.existsSync(filePath)) {
-        const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        Object.assign(data, fields);
-        fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+      const activeDir = path.join(baseDir, machine, 'active');
+      const sessionFile = path.join(activeDir, `session-${sessionId}.json`);
+      if (fs.existsSync(sessionFile)) {
+        const observerFile = path.join(activeDir, `observer-${sessionId}.json`);
+        let existing = {};
+        try { existing = JSON.parse(fs.readFileSync(observerFile, 'utf8')); } catch {}
+        Object.assign(existing, fields, { sessionId, targetMachine: machine });
+        fs.writeFileSync(observerFile, JSON.stringify(existing, null, 2));
         return true;
       }
     }
@@ -119,7 +117,7 @@ function updateFleetSessionField(sessionId, fields) {
   return false;
 }
 
-function importFleetStarNotes() {
+function processObserverCommands() {
   const cfg = loadFleetConfig();
   if (!cfg.enabled || !cfg.syncDir) return;
   const baseDir = path.join(cfg.syncDir, 'AgentPulse');
@@ -131,16 +129,20 @@ function importFleetStarNotes() {
       const activeDir = path.join(baseDir, machine, 'active');
       try {
         for (const f of fs.readdirSync(activeDir)) {
-          if (!f.startsWith('session-') || !f.endsWith('.json')) continue;
+          if (!f.startsWith('observer-') || !f.endsWith('.json')) continue;
           try {
             const data = JSON.parse(fs.readFileSync(path.join(activeDir, f), 'utf8'));
             const id = data.sessionId;
             if (!id) continue;
-            if (data.starred && !stars[id]) { stars[id] = true; starsChanged = true; }
-            if (!data.starred && stars[id]) { delete stars[id]; starsChanged = true; }
-            if (data.note && data.note !== notes[id]) { notes[id] = data.note; notesChanged = true; }
-            if (!data.note && notes[id]) { delete notes[id]; notesChanged = true; }
-            if (data.requestClose && data.machine === MACHINE_NAME) {
+            if (data.starred !== undefined) {
+              if (data.starred && !stars[id]) { stars[id] = true; starsChanged = true; }
+              if (!data.starred && stars[id]) { delete stars[id]; starsChanged = true; }
+            }
+            if (data.note !== undefined) {
+              if (data.note && data.note !== notes[id]) { notes[id] = data.note; notesChanged = true; }
+              if (!data.note && notes[id]) { delete notes[id]; notesChanged = true; }
+            }
+            if (data.requestClose && machine === MACHINE_NAME) {
               const localSessions = buildSessionList(false);
               const target = localSessions.find(s => s.sessionId === id && s.alive && s.pid);
               if (target) {
@@ -169,9 +171,17 @@ function importFleetSessions() {
       if (!fs.existsSync(activeDir)) continue;
       try {
         for (const f of fs.readdirSync(activeDir)) {
-          if (!f.endsWith('.json')) continue;
+          if (!f.startsWith('session-') || !f.endsWith('.json')) continue;
           try {
             const data = JSON.parse(fs.readFileSync(path.join(activeDir, f), 'utf8'));
+            const id = data.sessionId;
+            const observerFile = path.join(activeDir, `observer-${id}.json`);
+            try {
+              const obs = JSON.parse(fs.readFileSync(observerFile, 'utf8'));
+              if (obs.starred !== undefined) data.starred = obs.starred;
+              if (obs.note !== undefined) data.note = obs.note;
+              if (obs.requestClose) data.requestClose = true;
+            } catch {}
             data.isRemote = data.machine !== MACHINE_NAME;
             results.push(data);
           } catch {}
@@ -809,7 +819,7 @@ app.put('/api/sessions/:id/note', (req, res) => {
   const { note } = req.body;
   if (typeof note !== 'string') return res.status(400).json({ error: 'note must be a string' });
   const trimmed = note.trim();
-  updateFleetSessionField(req.params.id, { note: trimmed || null });
+  writeObserverCommand(req.params.id, { note: trimmed || null });
   const notes = loadSessionNotes();
   if (trimmed) {
     notes[req.params.id] = trimmed;
@@ -823,7 +833,7 @@ app.put('/api/sessions/:id/note', (req, res) => {
 
 app.put('/api/sessions/:id/star', (req, res) => {
   const { starred } = req.body;
-  updateFleetSessionField(req.params.id, { starred: !!starred });
+  writeObserverCommand(req.params.id, { starred: !!starred });
   const stars = loadSessionStars();
   if (starred) {
     stars[req.params.id] = true;
@@ -1902,7 +1912,7 @@ app.get('/api/fleet/sessions', (req, res) => {
 
 // POST /api/fleet/sessions/:id/close — request remote session close via fleet sync
 app.post('/api/fleet/sessions/:id/close', (req, res) => {
-  const ok = updateFleetSessionField(req.params.id, { requestClose: true });
+  const ok = writeObserverCommand(req.params.id, { requestClose: true });
   if (!ok) return res.status(404).json({ error: 'Fleet session not found' });
   res.json({ ok: true, message: 'Close request written — will be processed on next sync cycle' });
 });
@@ -1970,8 +1980,8 @@ module.exports = {
   loadFleetConfig,
   saveFleetConfig,
   exportActiveToFleet,
-  updateFleetSessionField,
-  importFleetStarNotes,
+  writeObserverCommand,
+  processObserverCommands,
   importFleetSessions,
   MACHINE_NAME,
   app,
