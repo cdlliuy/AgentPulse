@@ -918,7 +918,7 @@ function filtered() {
   return { list, matchMap: null };
 }
 
-function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : ''; }
 function fmtMcpTool(name) { const p = name.replace(/^mcp__/,'').split('__'); return p.length >= 2 ? p[0] + ' / ' + p.slice(1).join('__') : p[0]; }
 function timeAgo(ts) {
   if (!ts) return '';
@@ -1033,6 +1033,10 @@ function renderFleetConfigBar() {
 
 function renderActiveDashboard() {
   const el = document.getElementById('activeDashboard');
+  const syncDirInput = document.getElementById('settingsFleetSyncDir');
+  if (syncDirInput && document.activeElement === syncDirInput) {
+    return;
+  }
   let html = renderFleetConfigBar();
   if (fleetMode === 'observer') {
     const allSessions = fleetSessions.length ? fleetSessions : sessions.filter(s => s.alive);
